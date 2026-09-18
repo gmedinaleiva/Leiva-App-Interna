@@ -23,3 +23,16 @@ Rama principal: `DEV`.
 La aplicación interna de Leiva Hermanos SA usa Flutter. Las plataformas iniciales son Android y web.
 
 El usuario autorizó instalar herramientas, SDK, extensiones y sus dependencias fuera del repositorio. Esta excepción incluye configuración de entorno y cachés de las herramientas. Flutter se instala en `C:\Users\gmedina\develop\flutter`; Android SDK en `C:\Users\gmedina\AppData\Local\Android\Sdk`. El código y los archivos del proyecto deben seguir dentro de la carpeta autorizada.
+
+## Portal de referencia
+
+La referencia vigente para estética, módulos, login, APIs y comportamiento funcional es:
+
+- Repositorio remoto: `git@github.com:sistemas-leivahnos/WSL-Capital-Inversiones.git`
+- Rama: `WSL-DEV`
+- Commit de referencia verificado: `da5ccd7cb4de5b29692d24cd1f23887c1fb27cdd`
+- Checkout de origen en el servidor: `/opt/stacks/capital-inversiones-stage/capital-inversiones`
+
+Antes de implementar una integración, ejecutar `git fetch origin --prune`, verificar `origin/WSL-DEV` y registrar el commit consultado en `docs/capital-inversiones-reference.md`. No usar `master` ni el repositorio histórico `gmedinaleiva/capital-inversiones` como referencia. No copiar ni inspeccionar archivos locales sin seguimiento, respaldos, datos o `.env` del servidor; el código confirmado y el historial publicado de `WSL-DEV` son la fuente autorizada.
+
+Capital Inversiones es solamente una referencia externa. La aplicación Flutter continúa en su propio repositorio y su rama de trabajo sigue siendo `DEV`.
