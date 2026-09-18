@@ -18,3 +18,8 @@ Las ramas del proyecto son `DEV`, `TEST` y `PROD`. `DEV` es la rama principal y 
 
 Rama principal: `DEV`.
 
+## Entorno Flutter
+
+La aplicación interna de Leiva Hermanos SA usa Flutter. Las plataformas iniciales son Android y web.
+
+El usuario autorizó instalar herramientas, SDK, extensiones y sus dependencias fuera del repositorio. Esta excepción incluye configuración de entorno y cachés de las herramientas. Flutter se instala en `C:\Users\gmedina\develop\flutter`; Android SDK en `C:\Users\gmedina\AppData\Local\Android\Sdk`. El código y los archivos del proyecto deben seguir dentro de la carpeta autorizada.
