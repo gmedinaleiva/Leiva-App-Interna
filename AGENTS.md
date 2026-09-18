@@ -14,6 +14,7 @@ Si la ruta no coincide, detener las escrituras y corregir el directorio de traba
 
 Repositorio: https://github.com/gmedinaleiva/Leiva-App-Interna.git
 
-Trabajar en ramas específicas por tarea: `feat/<tarea>`, `fix/<tarea>` o `chore/<tarea>`. Revisar la rama y el estado de Git antes de modificar archivos. No trabajar directamente sobre `main` ni `master`. No descartar cambios existentes ni reescribir historial sin autorización expresa.
+Las ramas del proyecto son `DEV`, `TEST` y `PROD`. `DEV` es la rama principal y de desarrollo; `TEST` se usa para pruebas y `PROD` para producción. Trabajar en `DEV` por defecto. Revisar la rama y el estado de Git antes de modificar archivos. Promover cambios a `TEST` y `PROD` cuando el usuario lo indique. No descartar cambios existentes ni reescribir historial sin autorización expresa.
 
-Rama inicial: `chore/project-setup`.
+Rama principal: `DEV`.
+
