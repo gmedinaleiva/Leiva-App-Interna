@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'core/config/app_config.dart';
+import 'core/network/api_client.dart';
+import 'core/security/secure_session_store.dart';
+import 'features/auth/data/auth_api.dart';
+import 'features/auth/data/auth_repository.dart';
+import 'features/auth/presentation/auth_controller.dart';
+
 void main() => runApp(const LeivaApp());
 
 abstract final class AppColors {
@@ -11,44 +18,83 @@ abstract final class AppColors {
   static const border = Color(0xFFDCE2EA);
 }
 
-class LeivaApp extends StatelessWidget {
-  const LeivaApp({super.key});
+class LeivaApp extends StatefulWidget {
+  const LeivaApp({super.key, this.authController});
+
+  final AuthController? authController;
+
+  @override
+  State<LeivaApp> createState() => _LeivaAppState();
+}
+
+class _LeivaAppState extends State<LeivaApp> {
+  late final AuthController _authController;
+  late final bool _ownsAuthController;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsAuthController = widget.authController == null;
+    _authController = widget.authController ?? _createAuthController();
+    _authController.initialize();
+  }
+
+  AuthController _createAuthController() {
+    final sessionStore = SecureSessionStore();
+    final client = ApiClient(config: AppConfig(), sessionStore: sessionStore);
+    return AuthController(AuthRepository(AuthApi(client.dio), sessionStore));
+  }
+
+  @override
+  void dispose() {
+    if (_ownsAuthController) _authController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Leiva Interna',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        fontFamily: 'Inter',
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.red,
-          primary: AppColors.red,
-          surface: Colors.white,
-        ),
-        scaffoldBackgroundColor: AppColors.canvas,
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.all(16),
-          border: _inputBorder(AppColors.border),
-          enabledBorder: _inputBorder(AppColors.border),
-          focusedBorder: _inputBorder(AppColors.red, width: 1.6),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.red,
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(52),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+    return AnimatedBuilder(
+      animation: _authController,
+      builder: (context, _) => MaterialApp(
+        title: 'Leiva Interna',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          fontFamily: 'Inter',
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: AppColors.red,
+            primary: AppColors.red,
+            surface: Colors.white,
+          ),
+          scaffoldBackgroundColor: AppColors.canvas,
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.all(16),
+            border: _inputBorder(AppColors.border),
+            enabledBorder: _inputBorder(AppColors.border),
+            focusedBorder: _inputBorder(AppColors.red, width: 1.6),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.red,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
             ),
-            textStyle: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
+        home: switch (_authController.status) {
+          AuthStatus.checkingSession => const _SessionLoadingScreen(),
+          AuthStatus.authenticated => HomeScreen(
+            authController: _authController,
+          ),
+          _ => LoginScreen(authController: _authController),
+        },
       ),
-      home: const LoginScreen(),
     );
   }
 
@@ -57,6 +103,26 @@ class LeivaApp extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: color, width: width),
       );
+}
+
+class _SessionLoadingScreen extends StatelessWidget {
+  const _SessionLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+    body: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LeivaBrand(),
+          SizedBox(height: 28),
+          CircularProgressIndicator(color: AppColors.red),
+          SizedBox(height: 16),
+          Text('Verificando sesión segura...'),
+        ],
+      ),
+    ),
+  );
 }
 
 class LeivaBrand extends StatelessWidget {
@@ -121,7 +187,9 @@ class LeivaBrand extends StatelessWidget {
 }
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({required this.authController, super.key});
+
+  final AuthController authController;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -129,11 +197,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _userController = TextEditingController(text: 'demo.leiva');
-  final _passwordController = TextEditingController(text: 'demoleiva');
+  final _userController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _obscurePassword = true;
-  bool _rememberMe = true;
-  bool _submitting = false;
 
   @override
   void dispose() {
@@ -144,12 +210,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _submitting = true);
-    await Future<void>.delayed(const Duration(milliseconds: 450));
-    if (!mounted) return;
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+    final password = _passwordController.text;
+    await widget.authController.login(
+      username: _userController.text,
+      password: password,
     );
+    _passwordController.clear();
   }
 
   @override
@@ -158,17 +224,17 @@ class _LoginScreenState extends State<LoginScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 850;
+          final submitting =
+              widget.authController.status == AuthStatus.submittingCredentials;
           final form = _LoginForm(
             formKey: _formKey,
             userController: _userController,
             passwordController: _passwordController,
             obscurePassword: _obscurePassword,
-            rememberMe: _rememberMe,
-            submitting: _submitting,
+            submitting: submitting,
+            message: widget.authController.message,
             onTogglePassword: () =>
                 setState(() => _obscurePassword = !_obscurePassword),
-            onRememberChanged: (value) =>
-                setState(() => _rememberMe = value ?? false),
             onLogin: _login,
           );
           return Container(
@@ -344,10 +410,9 @@ class _LoginForm extends StatelessWidget {
     required this.userController,
     required this.passwordController,
     required this.obscurePassword,
-    required this.rememberMe,
     required this.submitting,
+    required this.message,
     required this.onTogglePassword,
-    required this.onRememberChanged,
     required this.onLogin,
   });
 
@@ -355,10 +420,9 @@ class _LoginForm extends StatelessWidget {
   final TextEditingController userController;
   final TextEditingController passwordController;
   final bool obscurePassword;
-  final bool rememberMe;
   final bool submitting;
+  final String? message;
   final VoidCallback onTogglePassword;
-  final ValueChanged<bool?> onRememberChanged;
   final VoidCallback onLogin;
 
   @override
@@ -432,36 +496,26 @@ class _LoginForm extends StatelessWidget {
                       ? 'Ingresá tu contraseña'
                       : null,
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 40,
-                      child: Checkbox(
-                        value: rememberMe,
-                        activeColor: AppColors.red,
-                        onChanged: onRememberChanged,
+                if (message != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1F2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      message!,
+                      key: const Key('authMessage'),
+                      style: const TextStyle(
+                        color: Color(0xFF991B1B),
+                        fontSize: 13,
                       ),
                     ),
-                    const Text(
-                      'Recordarme',
-                      style: TextStyle(color: AppColors.muted, fontSize: 13),
-                    ),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {},
-                          child: const Text(
-                            '¿Olvidaste tu clave?',
-                            textAlign: TextAlign.right,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                  ),
+                ],
+                const SizedBox(height: 20),
                 FilledButton(
                   key: const Key('loginButton'),
                   onPressed: submitting ? null : onLogin,
@@ -485,7 +539,7 @@ class _LoginForm extends StatelessWidget {
                 const SizedBox(height: 22),
                 const Center(
                   child: Text(
-                    'Demo visual · Sin conexión a datos reales',
+                    'Conexión segura con el portal Leiva',
                     style: TextStyle(color: Color(0xFF8A94A6), fontSize: 12),
                   ),
                 ),
@@ -510,7 +564,9 @@ class _FieldLabel extends StatelessWidget {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({required this.authController, super.key});
+
+  final AuthController authController;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -518,6 +574,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+
+  String get _displayName =>
+      widget.authController.session?.user.displayName ?? 'Usuario';
+
+  String get _initials {
+    final parts = _displayName
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .toList();
+    return parts.map((part) => part[0].toUpperCase()).join();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -546,19 +614,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 18,
-                backgroundColor: Color(0xFFFFE4E6),
+                backgroundColor: const Color(0xFFFFE4E6),
                 child: Text(
-                  'GM',
-                  style: TextStyle(
+                  _initials,
+                  style: const TextStyle(
                     color: AppColors.red,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
-              const SizedBox(width: 20),
+              IconButton(
+                key: const Key('logoutButton'),
+                tooltip: 'Cerrar sesión',
+                onPressed: widget.authController.logout,
+                icon: const Icon(Icons.logout_rounded),
+              ),
+              const SizedBox(width: 8),
             ],
           ),
           bottomNavigationBar: desktop
@@ -594,7 +668,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   selectedIndex: _selectedIndex,
                   onSelected: (index) => setState(() => _selectedIndex = index),
                 ),
-              const Expanded(child: _DashboardContent()),
+              Expanded(child: _DashboardContent(displayName: _displayName)),
             ],
           ),
         );
@@ -651,44 +725,29 @@ class _DesktopNavigation extends StatelessWidget {
 }
 
 class _DashboardContent extends StatelessWidget {
-  const _DashboardContent();
+  const _DashboardContent({required this.displayName});
+
+  final String displayName;
 
   static const modules = [
     (
-      'Proveedores',
-      'Documentos y aprobaciones',
-      Icons.inventory_2_outlined,
+      'Reservas de vehículos',
+      'Próximamente',
+      Icons.directions_car_outlined,
       Color(0xFF2563EB),
     ),
+    ('Salas', 'Próximamente', Icons.meeting_room_outlined, Color(0xFF7C3AED)),
     (
-      'Mis rendiciones',
-      'Gastos y comprobantes',
-      Icons.receipt_long_outlined,
-      Color(0xFF7C3AED),
-    ),
-    (
-      'Subproductos',
-      'Contratos y entregas',
-      Icons.local_shipping_outlined,
+      'Estacionamiento',
+      'Próximamente',
+      Icons.local_parking_outlined,
       Color(0xFF059669),
     ),
     (
-      'Mi movilidad',
-      'Reservas y vehículos',
-      Icons.directions_car_outlined,
+      'Mis gastos',
+      'Próximamente',
+      Icons.receipt_long_outlined,
       Color(0xFFEA580C),
-    ),
-    (
-      'Interbanking',
-      'Saldos y movimientos',
-      Icons.account_balance_outlined,
-      Color(0xFF0891B2),
-    ),
-    (
-      'Salas',
-      'Reserva de espacios',
-      Icons.meeting_room_outlined,
-      Color(0xFF475569),
     ),
   ];
 
@@ -702,9 +761,9 @@ class _DashboardContent extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Hola, Gustavo',
-                style: TextStyle(
+              Text(
+                'Hola, $displayName',
+                style: const TextStyle(
                   color: AppColors.ink,
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
@@ -754,7 +813,7 @@ class _DashboardContent extends StatelessWidget {
                           ),
                           SizedBox(height: 4),
                           Text(
-                            'Esta demo muestra la nueva experiencia móvil y web.',
+                            'La autenticación piloto está conectada de forma segura.',
                             style: TextStyle(
                               color: Color(0xFFFFD8DA),
                               fontSize: 13,
@@ -802,7 +861,7 @@ class _DashboardContent extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 30),
-              const _SectionTitle('Pendientes'),
+              const _SectionTitle('Estado del piloto'),
               const SizedBox(height: 14),
               const _PendingCard(),
             ],
@@ -847,11 +906,7 @@ class _ModuleCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$title estará disponible en la próxima etapa.'),
-          ),
-        ),
+        onTap: null,
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -892,7 +947,7 @@ class _ModuleCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Color(0xFF9CA3AF)),
+              const Icon(Icons.lock_outline_rounded, color: Color(0xFF9CA3AF)),
             ],
           ),
         ),
@@ -924,20 +979,20 @@ class _PendingCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Rendición pendiente de completar',
+                'Autenticación conectada',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               SizedBox(height: 4),
               Text(
-                'Viaje Rosario · vence mañana',
+                'Los módulos se habilitarán después de sus pruebas de autorización.',
                 style: TextStyle(color: AppColors.muted, fontSize: 13),
               ),
             ],
           ),
         ),
         Chip(
-          label: Text('Pendiente'),
-          backgroundColor: Color(0xFFFFF7ED),
+          label: Text('Piloto'),
+          backgroundColor: Color(0xFFEFF6FF),
           side: BorderSide.none,
         ),
       ],
