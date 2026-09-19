@@ -57,6 +57,9 @@ class ParkingRequest {
     this.bay,
     this.plate,
     this.purpose,
+    this.resolutionNotes,
+    this.meetingRoomReservationId,
+    this.geosatReservationId,
   });
 
   factory ParkingRequest.fromJson(Map<String, dynamic> json) => ParkingRequest(
@@ -70,6 +73,9 @@ class ParkingRequest {
         : null,
     plate: json['plate'] as String?,
     purpose: json['purpose'] as String?,
+    resolutionNotes: json['resolution_notes'] as String?,
+    meetingRoomReservationId: json['meeting_room_reservation_id'] as int?,
+    geosatReservationId: json['geosat_reservation_id'] as int?,
   );
 
   final int id;
@@ -80,6 +86,9 @@ class ParkingRequest {
   final ParkingBay? bay;
   final String? plate;
   final String? purpose;
+  final String? resolutionNotes;
+  final int? meetingRoomReservationId;
+  final int? geosatReservationId;
 
   bool get canCancel => const {
     'pendiente',

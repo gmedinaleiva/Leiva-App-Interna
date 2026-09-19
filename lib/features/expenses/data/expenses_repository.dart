@@ -7,6 +7,10 @@ abstract interface class ExpensesGateway {
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft);
   Future<ExpenseRecord> record(int documentId);
   Future<ExpenseFile> file(int documentId);
+  Future<ExpenseFile> report({
+    required int periodId,
+    String recordType = 'all',
+  });
   Future<ExpenseRecord> resubmit(int documentId);
   Future<ExpenseRecord> validateFuel(int documentId);
   Future<ExpenseRecord> saveFuelStatement(int documentId, String statement);
@@ -38,6 +42,12 @@ class ExpensesRepository implements ExpensesGateway {
 
   @override
   Future<ExpenseFile> file(int documentId) => _api.file(documentId);
+
+  @override
+  Future<ExpenseFile> report({
+    required int periodId,
+    String recordType = 'all',
+  }) => _api.report(periodId: periodId, recordType: recordType);
 
   @override
   Future<ExpenseRecord> resubmit(int documentId) => _api.resubmit(documentId);

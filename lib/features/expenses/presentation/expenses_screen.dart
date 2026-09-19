@@ -4,9 +4,13 @@ import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/security/idempotency_key.dart';
+import '../../vehicles/data/vehicles_repository.dart';
+import '../../vehicles/domain/vehicle_models.dart';
+import '../../vehicles/presentation/vehicles_screen.dart';
 import '../data/expenses_repository.dart';
 import '../domain/expense_models.dart';
 
@@ -14,10 +18,12 @@ class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({
     required this.gateway,
     required this.canUpload,
+    this.vehiclesGateway,
     super.key,
   });
   final ExpensesGateway gateway;
   final bool canUpload;
+  final VehiclesGateway? vehiclesGateway;
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -62,6 +68,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   Future<void> _upload() async {
     if (_dashboard == null || _rubrics == null) return;
+    var trips = const <VehicleReservation>[];
+    if (widget.vehiclesGateway != null) {
+      try {
+        trips = await widget.vehiclesGateway!.reservations();
+      } catch (_) {
+        // El comprobante puede cargarse sin vincular un viaje.
+      }
+    }
+    if (!mounted) return;
     final uploaded = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -69,10 +84,35 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           gateway: widget.gateway,
           dashboard: _dashboard!,
           rubrics: _rubrics!,
+          vehicleReservations: trips,
         ),
       ),
     );
     if (uploaded == true) await _load();
+  }
+
+  Future<void> _openReport() async {
+    final dashboard = _dashboard;
+    if (dashboard == null || dashboard.periods.isEmpty) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ExpenseReportScreen(
+          gateway: widget.gateway,
+          periods: dashboard.periods,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFine(ExpenseFine fine) async {
+    final gateway = widget.vehiclesGateway;
+    if (gateway == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) =>
+            VehicleNoticeDetailScreen(gateway: gateway, noticeId: fine.id),
+      ),
+    );
   }
 
   Future<void> _createAdvance() async {
@@ -163,6 +203,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
       actions: [
+        if (_dashboard?.periods.isNotEmpty == true)
+          IconButton(
+            tooltip: 'Planilla PDF',
+            onPressed: _loading ? null : _openReport,
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+          ),
         if (_dashboard?.allows('advances') == true)
           IconButton(
             tooltip: 'Registrar adelanto',
@@ -253,6 +299,40 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ),
           ),
         const SizedBox(height: 18),
+        if (data.fines.isNotEmpty) ...[
+          const _ExpenseTitle('Multas personales'),
+          const SizedBox(height: 10),
+          ...data.fines.map(
+            (fine) => Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                side: const BorderSide(color: Color(0xFFE3E8EF)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: ListTile(
+                leading: const Icon(Icons.gavel_outlined),
+                title: Text(fine.reason ?? 'Multa o aviso'),
+                subtitle: Text(
+                  [
+                    fine.vehicleLabel,
+                    fine.infractionAt == null
+                        ? null
+                        : _expenseDate(fine.infractionAt!),
+                    fine.status,
+                  ].whereType<String>().join(' · '),
+                ),
+                trailing: widget.vehiclesGateway == null
+                    ? null
+                    : const Icon(Icons.chevron_right_rounded),
+                onTap: widget.vehiclesGateway == null
+                    ? null
+                    : () => _openFine(fine),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
         const _ExpenseTitle('Comprobantes'),
         const SizedBox(height: 10),
         if (data.records.isEmpty)
@@ -267,6 +347,164 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ],
     );
   }
+}
+
+class ExpenseReportScreen extends StatefulWidget {
+  const ExpenseReportScreen({
+    required this.gateway,
+    required this.periods,
+    super.key,
+  });
+
+  final ExpensesGateway gateway;
+  final List<ExpensePeriod> periods;
+
+  @override
+  State<ExpenseReportScreen> createState() => _ExpenseReportScreenState();
+}
+
+class _ExpenseReportScreenState extends State<ExpenseReportScreen> {
+  late int _periodId;
+  String _recordType = 'all';
+  ExpenseFile? _report;
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _periodId = widget.periods.first.id;
+  }
+
+  Future<void> _generate() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _report = null;
+    });
+    try {
+      final report = await widget.gateway.report(
+        periodId: _periodId,
+        recordType: _recordType,
+      );
+      if (!mounted) return;
+      setState(() {
+        _report = report;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
+  Future<void> _share() async {
+    final report = _report;
+    if (report == null) return;
+    await SharePlus.instance.share(
+      ShareParams(
+        subject: 'Planilla de Mis Gastos',
+        files: [
+          XFile.fromData(
+            Uint8List.fromList(report.bytes),
+            mimeType: 'application/pdf',
+          ),
+        ],
+        fileNameOverrides: ['mis-gastos-periodo-$_periodId.pdf'],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Planilla de Mis Gastos'),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      actions: [
+        if (_report != null)
+          IconButton(
+            tooltip: 'Compartir PDF',
+            onPressed: _share,
+            icon: const Icon(Icons.share_outlined),
+          ),
+      ],
+    ),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        DropdownButtonFormField<int>(
+          initialValue: _periodId,
+          decoration: const InputDecoration(labelText: 'Rendición'),
+          items: widget.periods
+              .map(
+                (period) => DropdownMenuItem(
+                  value: period.id,
+                  child: Text(period.label),
+                ),
+              )
+              .toList(),
+          onChanged: _loading
+              ? null
+              : (value) {
+                  if (value != null) setState(() => _periodId = value);
+                },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          initialValue: _recordType,
+          decoration: const InputDecoration(labelText: 'Contenido'),
+          items: const [
+            DropdownMenuItem(value: 'all', child: Text('Todos los gastos')),
+            DropdownMenuItem(value: 'travel', child: Text('Viáticos')),
+            DropdownMenuItem(value: 'benefits', child: Text('Beneficios')),
+          ],
+          onChanged: _loading
+              ? null
+              : (value) {
+                  if (value != null) setState(() => _recordType = value);
+                },
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: _loading ? null : _generate,
+          icon: _loading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.picture_as_pdf_outlined),
+          label: Text(_loading ? 'Generando...' : 'Generar planilla'),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+        ],
+        if (_report != null) ...[
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _share,
+            icon: const Icon(Icons.share_outlined),
+            label: const Text('Compartir o guardar PDF'),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 620,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: PdfViewer.data(
+                Uint8List.fromList(_report!.bytes),
+                sourceName: 'mis-gastos-periodo-$_periodId.pdf',
+              ),
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
 }
 
 class ExpenseRecordScreen extends StatefulWidget {
@@ -473,6 +711,18 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text('${_record!.rubric ?? 'Sin rubro'} · ${_record!.status}'),
+                if (_record!.reference?.isNotEmpty == true)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text('Referencia: ${_record!.reference}'),
+                  ),
+                if (_record!.geosatReservationId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Viaje relacionado: #${_record!.geosatReservationId}',
+                    ),
+                  ),
                 if (_record!.reviewReason?.isNotEmpty == true)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -563,11 +813,13 @@ class CreateExpenseScreen extends StatefulWidget {
     required this.gateway,
     required this.dashboard,
     required this.rubrics,
+    required this.vehicleReservations,
     super.key,
   });
   final ExpensesGateway gateway;
   final ExpenseDashboard dashboard;
   final ExpenseRubrics rubrics;
+  final List<VehicleReservation> vehicleReservations;
 
   @override
   State<CreateExpenseScreen> createState() => _CreateExpenseScreenState();
@@ -578,6 +830,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
   final _amount = TextEditingController();
   final _merchant = TextEditingController();
+  final _reference = TextEditingController();
   final _description = TextEditingController();
   final _purpose = TextEditingController();
   final _fuelTime = TextEditingController();
@@ -588,6 +841,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   late DateTime _date;
   String? _rubric;
   int? _periodId;
+  int? _geosatReservationId;
   PlatformFile? _file;
   bool _saving = false;
   String? _error;
@@ -624,6 +878,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   void dispose() {
     _amount.dispose();
     _merchant.dispose();
+    _reference.dispose();
     _description.dispose();
     _purpose.dispose();
     _fuelTime.dispose();
@@ -697,6 +952,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           fileBytes: await _file!.readAsBytes(),
           periodId: _section == 'travel' ? _periodId : null,
           merchantName: _expenseNullable(_merchant.text),
+          receiptReference: _expenseNullable(_reference.text),
           description: _expenseNullable(_description.text),
           travelPurpose: _section == 'travel'
               ? _expenseNullable(_purpose.text)
@@ -708,6 +964,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           fuelVehiclePlate: _isFuel ? _expenseNullable(_fuelPlate.text) : null,
           fuelProvince: _isFuel ? _expenseNullable(_fuelProvince.text) : null,
           fuelCity: _isFuel ? _expenseNullable(_fuelCity.text) : null,
+          geosatReservationId: _section == 'travel'
+              ? _geosatReservationId
+              : null,
         ),
       );
       if (!mounted) return;
@@ -804,6 +1063,32 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
               validator: (value) =>
                   value == null ? 'Seleccioná una rendición' : null,
             ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<int>(
+              initialValue: _geosatReservationId ?? 0,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Viaje relacionado (opcional)',
+              ),
+              items: [
+                const DropdownMenuItem<int>(
+                  value: 0,
+                  child: Text('Sin viaje relacionado'),
+                ),
+                ...widget.vehicleReservations.map(
+                  (reservation) => DropdownMenuItem<int>(
+                    value: reservation.id,
+                    child: Text(
+                      '${reservation.destination ?? reservation.purpose ?? 'Viaje'} · ${_expenseDate(reservation.startsAt)}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (value) => setState(
+                () => _geosatReservationId = value == 0 ? null : value,
+              ),
+            ),
           ],
           const SizedBox(height: 16),
           TextFormField(
@@ -867,6 +1152,14 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             controller: _merchant,
             maxLength: 220,
             decoration: const InputDecoration(labelText: 'Comercio (opcional)'),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _reference,
+            maxLength: 120,
+            decoration: const InputDecoration(
+              labelText: 'Referencia del comprobante (opcional)',
+            ),
           ),
           const SizedBox(height: 8),
           TextFormField(

@@ -824,6 +824,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _DashboardContent(
                   selectedIndex: _selectedIndex,
                   displayName: _displayName,
+                  currentUserId: widget.authController.session!.user.id,
                   capabilities: widget.authController.session!.capabilities,
                   roomsGateway: widget.roomsGateway,
                   vehiclesGateway: widget.vehiclesGateway,
@@ -891,6 +892,7 @@ class _DashboardContent extends StatelessWidget {
   const _DashboardContent({
     required this.selectedIndex,
     required this.displayName,
+    required this.currentUserId,
     required this.capabilities,
     required this.roomsGateway,
     required this.vehiclesGateway,
@@ -901,6 +903,7 @@ class _DashboardContent extends StatelessWidget {
 
   final int selectedIndex;
   final String displayName;
+  final int currentUserId;
   final AppCapabilities capabilities;
   final RoomsGateway? roomsGateway;
   final VehiclesGateway? vehiclesGateway;
@@ -952,6 +955,7 @@ class _DashboardContent extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => RoomsScreen(
                     gateway: roomsGateway!,
+                    currentUserId: currentUserId,
                     canCreate: capabilities.allows(
                       'room_reservations',
                       'create',
@@ -995,6 +999,7 @@ class _DashboardContent extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => ExpensesScreen(
                     gateway: expensesGateway!,
+                    vehiclesGateway: vehiclesEnabled ? vehiclesGateway : null,
                     canUpload: capabilities.allows('my_expenses', 'upload'),
                   ),
                 ),

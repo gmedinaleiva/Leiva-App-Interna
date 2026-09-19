@@ -273,6 +273,19 @@ class _FakeRoomsGateway implements RoomsGateway {
       throw UnimplementedError();
 
   @override
+  Future<List<RoomParticipantOption>> participants(String query) async =>
+      const [];
+
+  @override
+  Future<RoomReservation> update(
+    int reservationId,
+    RoomReservationUpdate draft,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<void> withdraw(int reservationId) => throw UnimplementedError();
+
+  @override
   Future<List<MeetingRoom>> rooms(int branchId) async => const [];
 }
 
@@ -365,6 +378,12 @@ class _FakeExpensesGateway implements ExpensesGateway {
   Future<ExpenseFile> file(int documentId) => throw UnimplementedError();
 
   @override
+  Future<ExpenseFile> report({
+    required int periodId,
+    String recordType = 'all',
+  }) => throw UnimplementedError();
+
+  @override
   Future<ExpenseRecord> record(int documentId) => throw UnimplementedError();
 
   @override
@@ -393,6 +412,7 @@ class _FakeExpensesGateway implements ExpensesGateway {
     periods: [],
     records: [],
     alerts: [],
+    fines: [],
   );
 
   @override

@@ -68,6 +68,7 @@ class ExpenseRecord {
     this.reference,
     this.travelPurpose,
     this.benefitName,
+    this.geosatReservationId,
   });
 
   factory ExpenseRecord.fromJson(Map<String, dynamic> json) => ExpenseRecord(
@@ -90,6 +91,7 @@ class ExpenseRecord {
     reference: json['reference'] as String?,
     travelPurpose: json['trip'] as String?,
     benefitName: json['benefit_name'] as String?,
+    geosatReservationId: json['geosat_reservation_id'] as int?,
   );
 
   final int id;
@@ -109,6 +111,7 @@ class ExpenseRecord {
   final String? reference;
   final String? travelPurpose;
   final String? benefitName;
+  final int? geosatReservationId;
 }
 
 class ExpenseFile {
@@ -125,6 +128,7 @@ class ExpenseDashboard {
     required this.periods,
     required this.records,
     required this.alerts,
+    required this.fines,
   });
 
   factory ExpenseDashboard.fromJson(Map<String, dynamic> json) =>
@@ -135,14 +139,58 @@ class ExpenseDashboard {
         periods: _maps(json['periods']).map(ExpensePeriod.fromJson).toList(),
         records: _maps(json['records']).map(ExpenseRecord.fromJson).toList(),
         alerts: _maps(json['alerts']),
+        fines: _maps(json['fines']).map(ExpenseFine.fromJson).toList(),
       );
 
   final Map<String, dynamic> capabilities;
   final List<ExpensePeriod> periods;
   final List<ExpenseRecord> records;
   final List<Map<String, dynamic>> alerts;
+  final List<ExpenseFine> fines;
 
   bool allows(String key) => capabilities[key] == true;
+}
+
+class ExpenseFine {
+  const ExpenseFine({
+    required this.id,
+    required this.status,
+    this.reason,
+    this.infractionAt,
+    this.dueDate,
+    this.amount,
+    this.currency,
+    this.vehicleLabel,
+    this.employeeManagement = const {},
+  });
+
+  factory ExpenseFine.fromJson(Map<String, dynamic> json) => ExpenseFine(
+    id: json['id'] as int,
+    status: json['status'] as String,
+    reason: json['reason'] as String?,
+    infractionAt: json['infraction_at'] == null
+        ? null
+        : DateTime.tryParse(json['infraction_at'] as String)?.toLocal(),
+    dueDate: json['due_date'] == null
+        ? null
+        : DateTime.tryParse(json['due_date'] as String),
+    amount: (json['amount'] as num?)?.toDouble(),
+    currency: json['currency'] as String?,
+    vehicleLabel: json['vehicle_label'] as String?,
+    employeeManagement: Map<String, dynamic>.unmodifiable(
+      json['employee_management'] as Map<String, dynamic>? ?? const {},
+    ),
+  );
+
+  final int id;
+  final String status;
+  final String? reason;
+  final DateTime? infractionAt;
+  final DateTime? dueDate;
+  final double? amount;
+  final String? currency;
+  final String? vehicleLabel;
+  final Map<String, dynamic> employeeManagement;
 }
 
 class ExpenseRubrics {
@@ -169,6 +217,7 @@ class ExpenseUploadDraft {
     this.fileBytes,
     this.periodId,
     this.merchantName,
+    this.receiptReference,
     this.description,
     this.travelPurpose,
     this.benefitName,
@@ -176,6 +225,7 @@ class ExpenseUploadDraft {
     this.fuelVehiclePlate,
     this.fuelProvince,
     this.fuelCity,
+    this.geosatReservationId,
   });
 
   final String idempotencyKey;
@@ -188,6 +238,7 @@ class ExpenseUploadDraft {
   final List<int>? fileBytes;
   final int? periodId;
   final String? merchantName;
+  final String? receiptReference;
   final String? description;
   final String? travelPurpose;
   final String? benefitName;
@@ -195,6 +246,7 @@ class ExpenseUploadDraft {
   final String? fuelVehiclePlate;
   final String? fuelProvince;
   final String? fuelCity;
+  final int? geosatReservationId;
 }
 
 class TravelAdvanceDraft {

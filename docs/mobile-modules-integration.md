@@ -18,10 +18,10 @@ no permiten lectura anónima.
 
 | Módulo | Funciones del cliente Flutter |
 |---|---|
-| Salas | Listado, detalle, disponibilidad, alta idempotente, cancelación y dársenas para visitantes externos. |
+| Salas | Listado, detalle, disponibilidad, alta idempotente, participantes internos y externos, edición, retiro/cancelación y dársenas para visitantes externos. |
 | Vehículos | En curso, próximos e historial; disponibilidad, solicitud con distancia, ocupantes y equipaje; dársena de regreso al crear o posteriormente; inicio, finalización, cancelación, extensión, telemetría, trayectoria, panel de combustible y detalle de multas/evidencia propia. |
-| Estacionamiento | Solicitudes propias, plano lógico por sucursal, alta idempotente y cancelación. |
-| Mis Gastos | Tablero, rendiciones, adelantos, carga y edición de comprobantes, preview local de imágenes/PDF, envío y corrección de períodos, confirmación de acreditaciones, reenvío y evidencia de combustible. |
+| Estacionamiento | Solicitudes propias, plano lógico por sucursal, alta idempotente, cancelación y trazabilidad de solicitudes vinculadas a salas o viajes. |
+| Mis Gastos | Tablero, rendiciones, adelantos, carga y edición de comprobantes, referencia de ticket, vínculo opcional con viaje propio, preview local de imágenes/PDF, envío y corrección de períodos, confirmación de acreditaciones, reenvío, evidencia de combustible, multas personales y reporte PDF compartible. |
 
 Cada acceso se muestra únicamente cuando `/auth/me` devuelve la capacidad
 correspondiente. Las comprobaciones de interfaz no reemplazan la autorización
@@ -86,3 +86,16 @@ aviso y dársena de regreso rechazan el acceso sin sesión con `401`.
 La persistencia y los casos autenticados `403`, `404`, `409`, `422` e
 idempotencia quedan pendientes de evidencia con `demo_sistemas_flota`; hasta
 entonces el módulo no se marca como terminado.
+
+## Estado de validación de Salas, Estacionamiento y Mis Gastos
+
+El cliente se implementó contra OpenAPI `0.5.0-pilot`. El análisis estático y
+las 14 pruebas Flutter pasan. Sin sesión, la búsqueda de participantes, la
+edición y el retiro de una sala, y la descarga del reporte PDF responden `401`
+en Stage.
+
+La verificación autenticada debe realizarse desde Android con el usuario piloto
+y comprobar cada alta y cambio también en el portal web. Los resultados `403`,
+`404`, `409`, `422`, la repetición idempotente y la persistencia cruzada quedan
+pendientes de esa prueba; por eso estos módulos aún no se marcan como
+terminados.

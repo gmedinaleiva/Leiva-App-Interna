@@ -12,6 +12,7 @@ class RoomsScreen extends StatefulWidget {
   const RoomsScreen({
     required this.gateway,
     required this.canCreate,
+    required this.currentUserId,
     this.parkingGateway,
     this.canCreateParking = false,
     super.key,
@@ -19,6 +20,7 @@ class RoomsScreen extends StatefulWidget {
 
   final RoomsGateway gateway;
   final bool canCreate;
+  final int currentUserId;
   final ParkingGateway? parkingGateway;
   final bool canCreateParking;
 
@@ -124,6 +126,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
         builder: (_) => RoomReservationDetailScreen(
           gateway: widget.gateway,
           reservationId: reservation.id,
+          currentUserId: widget.currentUserId,
           parkingGateway: widget.parkingGateway,
           canCreateParking: widget.canCreateParking,
         ),
@@ -213,6 +216,7 @@ class RoomReservationDetailScreen extends StatefulWidget {
   const RoomReservationDetailScreen({
     required this.gateway,
     required this.reservationId,
+    required this.currentUserId,
     this.parkingGateway,
     this.canCreateParking = false,
     super.key,
@@ -220,6 +224,7 @@ class RoomReservationDetailScreen extends StatefulWidget {
 
   final RoomsGateway gateway;
   final int reservationId;
+  final int currentUserId;
   final ParkingGateway? parkingGateway;
   final bool canCreateParking;
 
@@ -274,6 +279,70 @@ class _RoomReservationDetailScreenState
             ParkingScreen(gateway: gateway, canCreate: widget.canCreateParking),
       ),
     );
+  }
+
+  bool get _canEdit {
+    final row = _reservation;
+    return row != null &&
+        (row.organizerId == widget.currentUserId ||
+            row.responsibleId == widget.currentUserId) &&
+        row.canCancel;
+  }
+
+  bool get _canWithdraw {
+    final row = _reservation;
+    if (row == null || !row.canCancel || _canEdit) return false;
+    return row.participants.any(
+      (participant) =>
+          !participant.isExternal && participant.userId == widget.currentUserId,
+    );
+  }
+
+  Future<void> _edit() async {
+    final row = _reservation;
+    if (row == null) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => EditRoomReservationScreen(
+          gateway: widget.gateway,
+          reservation: row,
+        ),
+      ),
+    );
+    if (changed == true) await _load();
+  }
+
+  Future<void> _withdraw() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Retirarme de la reunión'),
+        content: const Text(
+          'Dejarás de figurar como participante. La reserva continuará para el resto de los asistentes.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Retirarme'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.gateway.withdraw(widget.reservationId);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_messageFor(error))));
+    }
   }
 
   @override
@@ -347,11 +416,22 @@ class _RoomReservationDetailScreenState
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.local_parking_outlined),
                     title: Text(
-                      request['guest_name'] as String? ??
+                      request['participant_name'] as String? ??
                           request['plate'] as String? ??
                           'Solicitud',
                     ),
-                    subtitle: Text(request['status'] as String? ?? ''),
+                    subtitle: Text(
+                      [
+                            request['status'] as String?,
+                            if (request['bay'] is Map<String, dynamic>)
+                              (request['bay'] as Map<String, dynamic>)['name']
+                                  as String?,
+                            request['resolution_notes'] as String?,
+                          ]
+                          .whereType<String>()
+                          .where((value) => value.isNotEmpty)
+                          .join(' · '),
+                    ),
                   ),
                 ),
               ],
@@ -371,6 +451,22 @@ class _RoomReservationDetailScreenState
                   onPressed: _openParking,
                   icon: const Icon(Icons.directions_car_outlined),
                   label: const Text('Ver mis dársenas'),
+                ),
+              ],
+              if (_canEdit) ...[
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: _edit,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Editar reunión'),
+                ),
+              ],
+              if (_canWithdraw) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _withdraw,
+                  icon: const Icon(Icons.person_remove_outlined),
+                  label: const Text('Retirarme de la reunión'),
                 ),
               ],
             ],
@@ -618,6 +714,608 @@ class _VisitorParkingScreenState extends State<VisitorParkingScreen> {
   }
 }
 
+class EditRoomReservationScreen extends StatefulWidget {
+  const EditRoomReservationScreen({
+    required this.gateway,
+    required this.reservation,
+    super.key,
+  });
+
+  final RoomsGateway gateway;
+  final RoomReservation reservation;
+
+  @override
+  State<EditRoomReservationScreen> createState() =>
+      _EditRoomReservationScreenState();
+}
+
+class _EditRoomReservationScreenState extends State<EditRoomReservationScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _title;
+  late final TextEditingController _notes;
+  late DateTime _from;
+  late DateTime _to;
+  List<RoomBranch> _branches = const [];
+  List<MeetingRoom> _rooms = const [];
+  int? _branchId;
+  int? _roomId;
+  late final List<RoomParticipantOption> _internalParticipants;
+  late final List<ExternalRoomParticipantDraft> _externalParticipants;
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final reservation = widget.reservation;
+    _title = TextEditingController(text: reservation.title);
+    _notes = TextEditingController(text: reservation.notes);
+    _from = reservation.startsAt;
+    _to = reservation.endsAt;
+    _branchId = reservation.room.branchId;
+    _roomId = reservation.room.id;
+    _internalParticipants = reservation.participants
+        .where(
+          (participant) =>
+              !participant.isExternal && participant.userId != null,
+        )
+        .map(
+          (participant) => RoomParticipantOption(
+            id: participant.userId!,
+            name: participant.name,
+            username: participant.email ?? participant.name,
+            email: participant.email,
+          ),
+        )
+        .toList();
+    _externalParticipants = reservation.participants
+        .where((participant) => participant.isExternal)
+        .map(
+          (participant) => ExternalRoomParticipantDraft(
+            name: participant.name,
+            type: participant.externalType ?? 'visita',
+            organization: participant.organization,
+            email: participant.email,
+          ),
+        )
+        .toList();
+    _loadCatalogs();
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _notes.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCatalogs() async {
+    try {
+      final branches = await widget.gateway.branches();
+      final selectedBranch = branches.any((item) => item.id == _branchId)
+          ? _branchId
+          : branches.firstOrNull?.id;
+      final rooms = selectedBranch == null
+          ? const <MeetingRoom>[]
+          : await widget.gateway.rooms(selectedBranch);
+      if (!mounted) return;
+      setState(() {
+        _branches = branches;
+        _branchId = selectedBranch;
+        _rooms = rooms;
+        if (!rooms.any((room) => room.id == _roomId)) {
+          _roomId = rooms.firstOrNull?.id;
+        }
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = _messageFor(error);
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _changeBranch(int branchId) async {
+    setState(() {
+      _branchId = branchId;
+      _roomId = null;
+      _loading = true;
+    });
+    try {
+      final rooms = await widget.gateway.rooms(branchId);
+      if (!mounted) return;
+      setState(() {
+        _rooms = rooms;
+        _roomId = rooms.firstOrNull?.id;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = _messageFor(error);
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _pickDateTime({required bool start}) async {
+    final current = start ? _from : _to;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(current),
+    );
+    if (time == null) return;
+    final selected = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    setState(() {
+      if (start) {
+        _from = selected;
+        if (!_to.isAfter(_from)) _to = _from.add(const Duration(hours: 1));
+      } else {
+        _to = selected;
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate() || _roomId == null) return;
+    if (!_to.isAfter(_from)) {
+      setState(
+        () => _error = 'La fecha final debe ser posterior a la inicial.',
+      );
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.gateway.update(
+        widget.reservation.id,
+        RoomReservationUpdate(
+          roomId: _roomId!,
+          title: _title.text.trim(),
+          notes: _nullableRoom(_notes.text),
+          startsAt: _from,
+          endsAt: _to,
+          internalParticipantIds: _internalParticipants
+              .map((participant) => participant.id)
+              .toList(),
+          externalParticipants: List.unmodifiable(_externalParticipants),
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _messageFor(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Editar reunión'),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+    ),
+    body: _loading
+        ? const Center(child: CircularProgressIndicator())
+        : Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                DropdownButtonFormField<int>(
+                  initialValue: _branchId,
+                  decoration: const InputDecoration(labelText: 'Sucursal'),
+                  items: _branches
+                      .map(
+                        (branch) => DropdownMenuItem(
+                          value: branch.id,
+                          child: Text(branch.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: _saving
+                      ? null
+                      : (value) {
+                          if (value != null) _changeBranch(value);
+                        },
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: _roomId,
+                  decoration: const InputDecoration(labelText: 'Sala'),
+                  items: _rooms
+                      .map(
+                        (room) => DropdownMenuItem(
+                          value: room.id,
+                          child: Text(
+                            '${room.name} · ${room.capacity} personas',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _roomId = value),
+                  validator: (value) =>
+                      value == null ? 'Seleccioná una sala' : null,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DateTimeButton(
+                        label: 'Desde',
+                        value: _from,
+                        onTap: () => _pickDateTime(start: true),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DateTimeButton(
+                        label: 'Hasta',
+                        value: _to,
+                        onTap: () => _pickDateTime(start: false),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _title,
+                  maxLength: 220,
+                  decoration: const InputDecoration(labelText: 'Motivo'),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Ingresá el motivo'
+                      : null,
+                ),
+                RoomParticipantsEditor(
+                  gateway: widget.gateway,
+                  internalParticipants: _internalParticipants,
+                  externalParticipants: _externalParticipants,
+                  onChanged: () => setState(() {}),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _notes,
+                  maxLines: 3,
+                  maxLength: 4000,
+                  decoration: const InputDecoration(
+                    labelText: 'Notas (opcional)',
+                  ),
+                ),
+                if (_error != null)
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: Color(0xFFB42318)),
+                  ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _submit,
+                  icon: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(_saving ? 'Guardando...' : 'Guardar cambios'),
+                ),
+              ],
+            ),
+          ),
+  );
+}
+
+class RoomParticipantsEditor extends StatefulWidget {
+  const RoomParticipantsEditor({
+    required this.gateway,
+    required this.internalParticipants,
+    required this.externalParticipants,
+    required this.onChanged,
+    super.key,
+  });
+
+  final RoomsGateway gateway;
+  final List<RoomParticipantOption> internalParticipants;
+  final List<ExternalRoomParticipantDraft> externalParticipants;
+  final VoidCallback onChanged;
+
+  @override
+  State<RoomParticipantsEditor> createState() => _RoomParticipantsEditorState();
+}
+
+class _RoomParticipantsEditorState extends State<RoomParticipantsEditor> {
+  final _search = TextEditingController();
+  List<RoomParticipantOption> _results = const [];
+  bool _searching = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _runSearch() async {
+    final query = _search.text.trim();
+    if (query.length < 2) {
+      setState(() => _error = 'Ingresá al menos dos caracteres.');
+      return;
+    }
+    setState(() {
+      _searching = true;
+      _error = null;
+    });
+    try {
+      final results = await widget.gateway.participants(query);
+      if (!mounted) return;
+      setState(() {
+        _results = results
+            .where(
+              (result) => !widget.internalParticipants.any(
+                (selected) => selected.id == result.id,
+              ),
+            )
+            .toList();
+        _searching = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _error = _messageFor(error);
+      });
+    }
+  }
+
+  Future<void> _addExternal() async {
+    final participant = await _externalParticipantDialog(context);
+    if (participant == null) return;
+    widget.externalParticipants.add(participant);
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Participantes',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 10),
+      if (widget.internalParticipants.isNotEmpty)
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: widget.internalParticipants
+              .map(
+                (participant) => InputChip(
+                  label: Text(participant.name),
+                  avatar: const Icon(Icons.person_outline, size: 18),
+                  onDeleted: () {
+                    widget.internalParticipants.removeWhere(
+                      (item) => item.id == participant.id,
+                    );
+                    widget.onChanged();
+                  },
+                ),
+              )
+              .toList(),
+        ),
+      Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _runSearch(),
+              decoration: const InputDecoration(
+                labelText: 'Buscar empleado',
+                hintText: 'Nombre, usuario o correo',
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            tooltip: 'Buscar',
+            onPressed: _searching ? null : _runSearch,
+            icon: _searching
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.search_rounded),
+          ),
+        ],
+      ),
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            _error!,
+            style: const TextStyle(color: Color(0xFFB42318)),
+          ),
+        ),
+      ..._results.map(
+        (participant) => ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(participant.name),
+          subtitle: Text(participant.email ?? participant.username),
+          trailing: IconButton(
+            tooltip: 'Agregar',
+            onPressed: () {
+              widget.internalParticipants.add(participant);
+              setState(() {
+                _results = _results
+                    .where((item) => item.id != participant.id)
+                    .toList();
+              });
+              widget.onChanged();
+            },
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      ...widget.externalParticipants.asMap().entries.map(
+        (entry) => ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.badge_outlined),
+          title: Text(entry.value.name),
+          subtitle: Text(
+            [entry.value.type, entry.value.organization]
+                .whereType<String>()
+                .where((value) => value.isNotEmpty)
+                .join(' · '),
+          ),
+          trailing: IconButton(
+            tooltip: 'Quitar visitante',
+            onPressed: () {
+              widget.externalParticipants.removeAt(entry.key);
+              widget.onChanged();
+            },
+            icon: const Icon(Icons.delete_outline),
+          ),
+        ),
+      ),
+      OutlinedButton.icon(
+        onPressed: _addExternal,
+        icon: const Icon(Icons.person_add_alt_1_outlined),
+        label: const Text('Agregar visitante externo'),
+      ),
+    ],
+  );
+}
+
+Future<ExternalRoomParticipantDraft?> _externalParticipantDialog(
+  BuildContext context,
+) async {
+  final formKey = GlobalKey<FormState>();
+  final name = TextEditingController();
+  final organization = TextEditingController();
+  final email = TextEditingController();
+  var type = 'visita';
+  final result = await showDialog<ExternalRoomParticipantDraft>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('Visitante externo'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: type,
+                  decoration: const InputDecoration(labelText: 'Tipo'),
+                  items:
+                      const {
+                            'visita': 'Visita',
+                            'proveedor': 'Proveedor',
+                            'cliente': 'Cliente',
+                            'entrevista': 'Entrevista',
+                            'otro': 'Otro',
+                          }.entries
+                          .map(
+                            (entry) => DropdownMenuItem(
+                              value: entry.key,
+                              child: Text(entry.value),
+                            ),
+                          )
+                          .toList(),
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => type = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: name,
+                  maxLength: 180,
+                  decoration: const InputDecoration(labelText: 'Nombre'),
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Ingresá el nombre'
+                      : null,
+                ),
+                TextFormField(
+                  controller: organization,
+                  maxLength: 180,
+                  decoration: const InputDecoration(
+                    labelText: 'Organización (opcional)',
+                  ),
+                ),
+                TextFormField(
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  maxLength: 255,
+                  decoration: const InputDecoration(
+                    labelText: 'Correo (opcional)',
+                  ),
+                  validator: (value) {
+                    final text = value?.trim() ?? '';
+                    if (text.isEmpty) return null;
+                    return RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(text)
+                        ? null
+                        : 'Ingresá un correo válido';
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.pop(
+                context,
+                ExternalRoomParticipantDraft(
+                  type: type,
+                  name: name.text.trim(),
+                  organization: _nullableRoom(organization.text),
+                  email: _nullableRoom(email.text),
+                ),
+              );
+            },
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    ),
+  );
+  name.dispose();
+  organization.dispose();
+  email.dispose();
+  return result;
+}
+
 class CreateRoomReservationScreen extends StatefulWidget {
   const CreateRoomReservationScreen({
     required this.gateway,
@@ -647,6 +1345,8 @@ class _CreateRoomReservationScreenState
   String? _error;
   List<RoomAvailability> _availability = const [];
   int? _roomId;
+  final List<RoomParticipantOption> _internalParticipants = [];
+  final List<ExternalRoomParticipantDraft> _externalParticipants = [];
 
   @override
   void initState() {
@@ -741,6 +1441,10 @@ class _CreateRoomReservationScreenState
               : _notesController.text.trim(),
           startsAt: _from,
           endsAt: _to,
+          internalParticipantIds: _internalParticipants
+              .map((participant) => participant.id)
+              .toList(),
+          externalParticipants: List.unmodifiable(_externalParticipants),
         ),
       );
       if (!mounted) return;
@@ -850,6 +1554,13 @@ class _CreateRoomReservationScreenState
                   : null,
             ),
             const SizedBox(height: 8),
+            RoomParticipantsEditor(
+              gateway: widget.gateway,
+              internalParticipants: _internalParticipants,
+              externalParticipants: _externalParticipants,
+              onChanged: () => setState(() {}),
+            ),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _notesController,
               decoration: const InputDecoration(labelText: 'Notas (opcional)'),
@@ -1085,6 +1796,8 @@ String _messageFor(Object error) {
   return 'No pudimos completar la operación.';
 }
 
+String? _nullableRoom(String value) =>
+    value.trim().isEmpty ? null : value.trim();
 String _two(int value) => value.toString().padLeft(2, '0');
 String _formatDateTime(DateTime value) =>
     '${_two(value.day)}/${_two(value.month)}/${value.year} ${_formatTime(value)}';

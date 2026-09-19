@@ -186,6 +186,24 @@ class _ParkingScreenState extends State<ParkingScreen> {
                   const SizedBox(height: 7),
                   _ParkingLine(Icons.notes_outlined, row.purpose!),
                 ],
+                if (row.meetingRoomReservationId != null) ...[
+                  const SizedBox(height: 7),
+                  _ParkingLine(
+                    Icons.meeting_room_outlined,
+                    'Reserva de sala #${row.meetingRoomReservationId}',
+                  ),
+                ],
+                if (row.geosatReservationId != null) ...[
+                  const SizedBox(height: 7),
+                  _ParkingLine(
+                    Icons.route_outlined,
+                    'Reserva de vehiculo #${row.geosatReservationId}',
+                  ),
+                ],
+                if (row.resolutionNotes?.isNotEmpty == true) ...[
+                  const SizedBox(height: 7),
+                  _ParkingLine(Icons.fact_check_outlined, row.resolutionNotes!),
+                ],
                 if (row.canCancel) ...[
                   const Divider(height: 26),
                   Align(

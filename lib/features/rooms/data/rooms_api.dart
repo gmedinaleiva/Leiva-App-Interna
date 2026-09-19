@@ -63,6 +63,16 @@ class RoomsApi {
         apiData(await _dio.get<dynamic>('room-reservations/$reservationId')),
       );
 
+  Future<List<RoomParticipantOption>> participants(String query) async {
+    final data = apiData(
+      await _dio.get<dynamic>(
+        'room-participants',
+        queryParameters: {'q': query, 'limit': 20},
+      ),
+    );
+    return _items(data).map(RoomParticipantOption.fromJson).toList();
+  }
+
   Future<VisitorParkingOptions> visitorParkingOptions(
     int reservationId, {
     required String vehicleType,
@@ -104,8 +114,10 @@ class RoomsApi {
         'notes': draft.notes,
         'starts_at': draft.startsAt.toUtc().toIso8601String(),
         'ends_at': draft.endsAt.toUtc().toIso8601String(),
-        'internal_participant_ids': <int>[],
-        'external_participants': <Map<String, dynamic>>[],
+        'internal_participant_ids': draft.internalParticipantIds,
+        'external_participants': draft.externalParticipants
+            .map((participant) => participant.toJson())
+            .toList(),
       },
       options: Options(
         contentType: Headers.jsonContentType,
@@ -113,6 +125,32 @@ class RoomsApi {
       ),
     );
     return RoomReservation.fromJson(apiData(response));
+  }
+
+  Future<RoomReservation> update(
+    int reservationId,
+    RoomReservationUpdate draft,
+  ) async {
+    final response = await _dio.patch<dynamic>(
+      'room-reservations/$reservationId',
+      data: {
+        'room_id': draft.roomId,
+        'title': draft.title,
+        'notes': draft.notes,
+        'starts_at': draft.startsAt.toUtc().toIso8601String(),
+        'ends_at': draft.endsAt.toUtc().toIso8601String(),
+        'internal_participant_ids': draft.internalParticipantIds,
+        'external_participants': draft.externalParticipants
+            .map((participant) => participant.toJson())
+            .toList(),
+      },
+      options: Options(contentType: Headers.jsonContentType),
+    );
+    return RoomReservation.fromJson(apiData(response));
+  }
+
+  Future<void> withdraw(int reservationId) async {
+    await _dio.post<dynamic>('room-reservations/$reservationId/withdraw');
   }
 
   Future<RoomReservation> cancel(int reservationId, {String? reason}) async {

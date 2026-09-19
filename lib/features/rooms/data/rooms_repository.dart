@@ -14,6 +14,7 @@ abstract interface class RoomsGateway {
     required DateTime to,
   });
   Future<RoomReservation> detail(int reservationId);
+  Future<List<RoomParticipantOption>> participants(String query);
   Future<VisitorParkingOptions> visitorParkingOptions(
     int reservationId, {
     required String vehicleType,
@@ -23,6 +24,11 @@ abstract interface class RoomsGateway {
     VisitorParkingDraft draft,
   );
   Future<RoomReservation> create(RoomReservationDraft draft);
+  Future<RoomReservation> update(
+    int reservationId,
+    RoomReservationUpdate draft,
+  );
+  Future<void> withdraw(int reservationId);
   Future<RoomReservation> cancel(int reservationId, {String? reason});
 }
 
@@ -55,6 +61,10 @@ class RoomsRepository implements RoomsGateway {
       _api.detail(reservationId);
 
   @override
+  Future<List<RoomParticipantOption>> participants(String query) =>
+      _api.participants(query);
+
+  @override
   Future<VisitorParkingOptions> visitorParkingOptions(
     int reservationId, {
     required String vehicleType,
@@ -69,6 +79,15 @@ class RoomsRepository implements RoomsGateway {
   @override
   Future<RoomReservation> create(RoomReservationDraft draft) =>
       _api.create(draft);
+
+  @override
+  Future<RoomReservation> update(
+    int reservationId,
+    RoomReservationUpdate draft,
+  ) => _api.update(reservationId, draft);
+
+  @override
+  Future<void> withdraw(int reservationId) => _api.withdraw(reservationId);
 
   @override
   Future<RoomReservation> cancel(int reservationId, {String? reason}) =>
