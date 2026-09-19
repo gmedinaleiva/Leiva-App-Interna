@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'core/config/app_config.dart';
 import 'core/network/api_client.dart';
@@ -20,9 +21,24 @@ import 'features/rooms/presentation/rooms_screen.dart';
 import 'features/vehicles/data/vehicles_api.dart';
 import 'features/vehicles/data/vehicles_repository.dart';
 import 'features/vehicles/presentation/vehicles_screen.dart';
+import 'leiva_prelogin/leiva_prelogin.dart';
 
-void main() =>
-    runApp(kIsWeb ? const _WebPilotUnavailableApp() : const LeivaApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb) {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+  }
+  runApp(kIsWeb ? const _WebPilotUnavailableApp() : const LeivaApp());
+}
 
 class _WebPilotUnavailableApp extends StatelessWidget {
   const _WebPilotUnavailableApp();
@@ -77,6 +93,7 @@ class LeivaApp extends StatefulWidget {
     this.vehiclesGateway,
     this.parkingGateway,
     this.expensesGateway,
+    this.skipPrelogin = false,
   });
 
   final AuthController? authController;
@@ -84,6 +101,7 @@ class LeivaApp extends StatefulWidget {
   final VehiclesGateway? vehiclesGateway;
   final ParkingGateway? parkingGateway;
   final ExpensesGateway? expensesGateway;
+  final bool skipPrelogin;
 
   @override
   State<LeivaApp> createState() => _LeivaAppState();
@@ -96,10 +114,12 @@ class _LeivaAppState extends State<LeivaApp> {
   VehiclesGateway? _vehiclesGateway;
   ParkingGateway? _parkingGateway;
   ExpensesGateway? _expensesGateway;
+  bool _preloginShown = false;
 
   @override
   void initState() {
     super.initState();
+    _preloginShown = widget.skipPrelogin;
     _ownsAuthController = widget.authController == null;
     if (widget.authController == null) {
       final sessionStore = SecureSessionStore();
@@ -179,7 +199,15 @@ class _LeivaAppState extends State<LeivaApp> {
             parkingGateway: _parkingGateway,
             expensesGateway: _expensesGateway,
           ),
-          _ => LoginScreen(authController: _authController),
+          _ => LeivaPrelogin(
+            skipIntro: _preloginShown,
+            onLoginReady: () {
+              if (mounted && !_preloginShown) {
+                setState(() => _preloginShown = true);
+              }
+            },
+            loginBuilder: (_) => LoginScreen(authController: _authController),
+          ),
         },
       ),
     );
@@ -323,6 +351,7 @@ class _LoginScreenState extends State<LoginScreen> {
             onTogglePassword: () =>
                 setState(() => _obscurePassword = !_obscurePassword),
             onLogin: _login,
+            mobile: !wide,
           );
           return Container(
             decoration: const BoxDecoration(
@@ -332,41 +361,55 @@ class _LoginScreenState extends State<LoginScreen> {
                 colors: [Color(0xFFFBFCFF), Color(0xFFEEF2F7)],
               ),
             ),
-            child: SafeArea(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1180),
-                  child: Padding(
-                    padding: EdgeInsets.all(wide ? 32 : 18),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.ink.withValues(alpha: 0.12),
-                              blurRadius: 34,
-                              offset: const Offset(0, 14),
-                            ),
-                          ],
-                        ),
-                        child: wide
-                            ? Row(
+            child: wide
+                ? SafeArea(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1180),
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(28),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.ink.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    blurRadius: 34,
+                                    offset: const Offset(0, 14),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
                                 children: [
                                   const Expanded(child: _LoginHero()),
                                   Expanded(child: form),
                                 ],
-                              )
-                            : SingleChildScrollView(
-                                child: Column(children: [_mobileHero(), form]),
                               ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: IntrinsicHeight(
+                        child: Column(
+                          children: [
+                            _mobileHero(),
+                            Expanded(child: form),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            ),
           );
         },
       ),
@@ -375,7 +418,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _mobileHero() => Container(
     width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(26, 26, 26, 24),
+    padding: EdgeInsets.fromLTRB(
+      26,
+      MediaQuery.paddingOf(context).top + 22,
+      26,
+      24,
+    ),
     decoration: const BoxDecoration(
       gradient: LinearGradient(colors: [Color(0xFFE11D25), Color(0xFFC70F19)]),
     ),
@@ -501,6 +549,7 @@ class _LoginForm extends StatelessWidget {
     required this.message,
     required this.onTogglePassword,
     required this.onLogin,
+    this.mobile = false,
   });
 
   final GlobalKey<FormState> formKey;
@@ -511,12 +560,18 @@ class _LoginForm extends StatelessWidget {
   final String? message;
   final VoidCallback onTogglePassword;
   final VoidCallback onLogin;
+  final bool mobile;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       constraints: const BoxConstraints(minHeight: 520),
-      padding: const EdgeInsets.symmetric(horizontal: 42, vertical: 42),
+      padding: EdgeInsets.fromLTRB(
+        mobile ? 26 : 42,
+        mobile ? 30 : 42,
+        mobile ? 26 : 42,
+        mobile ? MediaQuery.viewPaddingOf(context).bottom + 92 : 42,
+      ),
       color: Colors.white,
       child: Center(
         child: ConstrainedBox(

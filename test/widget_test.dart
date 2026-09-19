@@ -24,7 +24,9 @@ void main() {
     final controller = AuthController(gateway);
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(LeivaApp(authController: controller));
+    await tester.pumpWidget(
+      LeivaApp(authController: controller, skipPrelogin: true),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Bienvenido'), findsOneWidget);
@@ -67,7 +69,11 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      LeivaApp(authController: controller, roomsGateway: _FakeRoomsGateway()),
+      LeivaApp(
+        authController: controller,
+        roomsGateway: _FakeRoomsGateway(),
+        skipPrelogin: true,
+      ),
     );
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('usernameField')), 'piloto');
@@ -116,6 +122,7 @@ void main() {
         vehiclesGateway: _FakeVehiclesGateway(),
         parkingGateway: _FakeParkingGateway(),
         expensesGateway: _FakeExpensesGateway(),
+        skipPrelogin: true,
       ),
     );
     await tester.pumpAndSettle();
