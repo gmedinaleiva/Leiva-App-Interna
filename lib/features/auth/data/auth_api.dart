@@ -12,6 +12,7 @@ class AuthApi {
     required String username,
     required String password,
     required String deviceName,
+    required String clientPlatform,
   }) async {
     final response = await _dio.post<dynamic>(
       'auth/login',
@@ -19,7 +20,7 @@ class AuthApi {
         'username': username,
         'password': password,
         'device_name': deviceName,
-        'client_platform': 'android',
+        'client_platform': clientPlatform,
       },
       options: Options(contentType: Headers.jsonContentType),
     );

@@ -92,6 +92,8 @@ class RoomReservation {
     required this.endsAt,
     required this.room,
     this.notes,
+    this.participants = const [],
+    this.visitorParking = const [],
   });
 
   factory RoomReservation.fromJson(Map<String, dynamic> json) =>
@@ -103,6 +105,10 @@ class RoomReservation {
         startsAt: DateTime.parse(json['starts_at'] as String).toLocal(),
         endsAt: DateTime.parse(json['ends_at'] as String).toLocal(),
         room: ReservationRoom.fromJson(json['room'] as Map<String, dynamic>),
+        participants: _roomMaps(json['participants'])
+            .map(RoomParticipant.fromJson)
+            .toList(),
+        visitorParking: _roomMaps(json['visitor_parking']),
       );
 
   final int id;
@@ -112,12 +118,127 @@ class RoomReservation {
   final DateTime startsAt;
   final DateTime endsAt;
   final ReservationRoom room;
+  final List<RoomParticipant> participants;
+  final List<Map<String, dynamic>> visitorParking;
 
   bool get canCancel => !const {
     'cancelled',
     'canceled',
     'completed',
   }.contains(status.toLowerCase());
+}
+
+class RoomParticipant {
+  const RoomParticipant({
+    required this.id,
+    required this.kind,
+    required this.name,
+    this.organization,
+    this.email,
+  });
+
+  factory RoomParticipant.fromJson(Map<String, dynamic> json) =>
+      RoomParticipant(
+        id: json['id'] as int,
+        kind: json['kind'] as String,
+        name: json['name'] as String? ?? 'Participante',
+        organization: json['organization'] as String?,
+        email: json['email'] as String?,
+      );
+
+  final int id;
+  final String kind;
+  final String name;
+  final String? organization;
+  final String? email;
+
+  bool get isExternal => kind == 'externo';
+}
+
+class VisitorParkingOption {
+  const VisitorParkingOption({
+    required this.id,
+    required this.name,
+    required this.hasActiveRequest,
+    this.organization,
+  });
+
+  factory VisitorParkingOption.fromJson(Map<String, dynamic> json) =>
+      VisitorParkingOption(
+        id: json['id'] as int,
+        name: json['name'] as String? ?? 'Visitante',
+        organization: json['organization'] as String?,
+        hasActiveRequest: json['has_active_request'] as bool? ?? false,
+      );
+
+  final int id;
+  final String name;
+  final String? organization;
+  final bool hasActiveRequest;
+}
+
+class VisitorParkingBay {
+  const VisitorParkingBay({
+    required this.id,
+    required this.name,
+    required this.available,
+    this.sector,
+    this.unavailableReason,
+  });
+
+  factory VisitorParkingBay.fromJson(Map<String, dynamic> json) =>
+      VisitorParkingBay(
+        id: json['id'] as int,
+        name: json['name'] as String,
+        available: json['available'] as bool? ?? false,
+        sector: json['sector'] as String?,
+        unavailableReason: json['unavailable_reason'] as String?,
+      );
+
+  final int id;
+  final String name;
+  final bool available;
+  final String? sector;
+  final String? unavailableReason;
+}
+
+class VisitorParkingOptions {
+  const VisitorParkingOptions({
+    required this.visitors,
+    required this.bays,
+    required this.requests,
+  });
+
+  factory VisitorParkingOptions.fromJson(Map<String, dynamic> json) =>
+      VisitorParkingOptions(
+        visitors: _roomMaps(json['visitors'])
+            .map(VisitorParkingOption.fromJson)
+            .toList(),
+        bays: _roomMaps(json['bays']).map(VisitorParkingBay.fromJson).toList(),
+        requests: _roomMaps(json['requests']),
+      );
+
+  final List<VisitorParkingOption> visitors;
+  final List<VisitorParkingBay> bays;
+  final List<Map<String, dynamic>> requests;
+}
+
+class VisitorParkingDraft {
+  const VisitorParkingDraft({
+    required this.idempotencyKey,
+    required this.participantId,
+    required this.bayId,
+    required this.vehicleType,
+    this.plate,
+    this.notes,
+  });
+
+  final String idempotencyKey;
+  final int participantId;
+  final int bayId;
+  final String vehicleType;
+  final String? plate;
+  final String? notes;
 }
 
 class RoomReservationDraft {
@@ -136,4 +257,9 @@ class RoomReservationDraft {
   final String? notes;
   final DateTime startsAt;
   final DateTime endsAt;
+}
+
+List<Map<String, dynamic>> _roomMaps(dynamic value) {
+  if (value is! List) return const [];
+  return value.cast<Map<String, dynamic>>();
 }

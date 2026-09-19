@@ -66,6 +66,41 @@ class VehiclesApi {
     return VehicleReservation.fromJson(apiData(response));
   }
 
+  Future<VehicleReservation> extend(
+    int reservationId,
+    DateTime endsAt, {
+    String? notes,
+  }) async {
+    final response = await _dio.post<dynamic>(
+      'vehicle-reservations/$reservationId/extend',
+      data: {'ends_at': endsAt.toUtc().toIso8601String(), 'notes': notes},
+      options: Options(contentType: Headers.jsonContentType),
+    );
+    return VehicleReservation.fromJson(apiData(response));
+  }
+
+  Future<VehicleTripView> trip(int reservationId, {required bool live}) async {
+    final path = live
+        ? 'vehicle-reservations/$reservationId/live'
+        : 'vehicle-reservations/$reservationId/trajectory';
+    final response = await _dio.get<dynamic>(
+      path,
+      queryParameters: live ? null : {'refresh': false},
+    );
+    return VehicleTripView.fromJson(apiData(response));
+  }
+
+  Future<List<VehicleNotice>> notices({int? reservationId}) async {
+    final query = <String, dynamic>{'limit': 100};
+    if (reservationId != null) {
+      query['reservation_id'] = reservationId;
+    }
+    final data = apiData(
+      await _dio.get<dynamic>('vehicle-notices', queryParameters: query),
+    );
+    return _items(data).map(VehicleNotice.fromJson).toList();
+  }
+
   List<Map<String, dynamic>> _items(Map<String, dynamic> data) {
     final items = data['items'];
     if (items is! List) {

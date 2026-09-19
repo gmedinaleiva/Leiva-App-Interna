@@ -447,6 +447,19 @@ class _CreateParkingRequestScreenState
                   style: TextStyle(color: Color(0xFFB42318)),
                 ),
               ),
+            if (!_checking && _bays.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              const Text(
+                'Plano lógico',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _bays.map((bay) => _ParkingBayTile(bay)).toList(),
+              ),
+            ],
             const SizedBox(height: 16),
             TextFormField(
               controller: _plate,
@@ -485,6 +498,47 @@ class _CreateParkingRequestScreenState
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ParkingBayTile extends StatelessWidget {
+  const _ParkingBayTile(this.bay);
+  final ParkingBay bay;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (bay.unavailableReason) {
+      'reserved' => 'Reservada',
+      'blocked' => 'Bloqueada',
+      'institutional' => 'Institucional',
+      'vehicle_type' => 'Incompatible',
+      _ => 'Disponible',
+    };
+    final color = bay.available
+        ? const Color(0xFF067647)
+        : const Color(0xFF667085);
+    return Container(
+      width: 142,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            bay.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 3),
+          Text(label, style: TextStyle(fontSize: 11, color: color)),
+        ],
       ),
     );
   }

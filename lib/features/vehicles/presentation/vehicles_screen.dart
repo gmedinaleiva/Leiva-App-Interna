@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -160,92 +162,464 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
         message: 'Todavía no tenés reservas de vehículos.',
       );
     }
-    return ListView.separated(
+    final active = _reservations
+        .where((row) => row.status.toLowerCase() == 'en_uso')
+        .toList();
+    final upcoming = _reservations
+        .where(
+          (row) => const {
+            'pendiente',
+            'pending',
+            'aprobada',
+            'approved',
+          }.contains(row.status.toLowerCase()),
+        )
+        .toList();
+    final history = _reservations
+        .where((row) => !active.contains(row) && !upcoming.contains(row))
+        .toList();
+    return ListView(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 100),
-      itemCount: _reservations.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final row = _reservations[index];
-        return Card(
-          margin: EdgeInsets.zero,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            side: const BorderSide(color: Color(0xFFE3E8EF)),
-            borderRadius: BorderRadius.circular(16),
+      children: [
+        ..._section('En curso', active),
+        ..._section('Próximos', upcoming),
+        ..._section('Historial', history),
+      ],
+    );
+  }
+
+  List<Widget> _section(String title, List<VehicleReservation> rows) {
+    if (rows.isEmpty) return const [];
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(2, 8, 2, 10),
+        child: Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
+      ),
+      ...rows.map(
+        (row) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Card(
+            margin: EdgeInsets.zero,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: Color(0xFFE3E8EF)),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => VehicleTripScreen(
+                    gateway: widget.gateway,
+                    reservation: row,
+                  ),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            row.vehicle?.label ?? 'Vehículo',
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        _Status(text: row.status),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _Line(
+                      Icons.route_outlined,
+                      [row.purpose, row.destination]
+                              .whereType<String>()
+                              .where((v) => v.isNotEmpty)
+                              .join(' · ')
+                              .isEmpty
+                          ? 'Sin detalle de viaje'
+                          : [row.purpose, row.destination]
+                                .whereType<String>()
+                                .where((v) => v.isNotEmpty)
+                                .join(' · '),
+                    ),
+                    const SizedBox(height: 7),
+                    _Line(
+                      Icons.schedule_rounded,
+                      '${_dt(row.startsAt)} — ${_time(row.endsAt)}',
+                    ),
+                    if (row.nextAction != null || row.canCancel) ...[
+                      const Divider(height: 26),
+                      Wrap(
+                        spacing: 8,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          if (row.canCancel)
+                            TextButton.icon(
+                              onPressed: () => _runAction(row, 'cancel'),
+                              icon: const Icon(Icons.cancel_outlined),
+                              label: const Text('Cancelar'),
+                            ),
+                          if (row.nextAction != null)
+                            FilledButton.icon(
+                              onPressed: () => _runAction(row, row.nextAction!),
+                              icon: Icon(
+                                row.nextAction == 'start'
+                                    ? Icons.play_arrow_rounded
+                                    : Icons.flag_outlined,
+                              ),
+                              label: Text(
+                                row.nextAction == 'start'
+                                    ? 'Iniciar'
+                                    : 'Finalizar',
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+        ),
+      ),
+    ];
+  }
+}
+
+class VehicleTripScreen extends StatefulWidget {
+  const VehicleTripScreen({
+    required this.gateway,
+    required this.reservation,
+    super.key,
+  });
+
+  final VehiclesGateway gateway;
+  final VehicleReservation reservation;
+
+  @override
+  State<VehicleTripScreen> createState() => _VehicleTripScreenState();
+}
+
+class _VehicleTripScreenState extends State<VehicleTripScreen>
+    with WidgetsBindingObserver {
+  Timer? _timer;
+  VehicleTripView? _trip;
+  List<VehicleNotice> _notices = const [];
+  String? _error;
+  bool _loading = true;
+
+  bool get _isLive => widget.reservation.status.toLowerCase() == 'en_uso';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _load();
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _load();
+      _startPolling();
+    } else {
+      _timer?.cancel();
+    }
+  }
+
+  void _startPolling() {
+    _timer?.cancel();
+    if (_isLive) {
+      _timer = Timer.periodic(
+        const Duration(seconds: 45),
+        (_) => _load(silent: true),
+      );
+    }
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final result = await Future.wait<dynamic>([
+        widget.gateway.trip(widget.reservation.id, live: _isLive),
+        widget.gateway.notices(reservationId: widget.reservation.id),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _trip = result[0] as VehicleTripView;
+        _notices = result[1] as List<VehicleNotice>;
+        _loading = false;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = _message(error);
+      });
+    }
+  }
+
+  Future<void> _extend() async {
+    var selected = widget.reservation.endsAt.add(const Duration(hours: 1));
+    final date = await showDatePicker(
+      context: context,
+      initialDate: selected,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 30)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(selected),
+    );
+    if (time == null) return;
+    selected = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    try {
+      await widget.gateway.extend(widget.reservation.id, selected);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Extensión registrada.')));
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_message(error))));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(widget.reservation.vehicle?.label ?? 'Detalle del viaje'),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      actions: [
+        IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
+      ],
+    ),
+    body: _loading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+        ? _MessageList(message: _error!, onRetry: _load)
+        : _tripBody(),
+  );
+
+  Widget _tripBody() {
+    final trip = _trip!;
+    final live = trip.live['position'] as Map<String, dynamic>?;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (_isLive)
+          FilledButton.icon(
+            onPressed: _extend,
+            icon: const Icon(Icons.more_time_rounded),
+            label: const Text('Extender viaje'),
+          ),
+        if (_isLive) const SizedBox(height: 14),
+        if (live != null)
+          _TripPanel(
+            title: 'Última señal',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.vehicle?.label ?? 'Vehículo',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    _Status(text: row.status),
-                  ],
+                Text(
+                  '${live['event'] ?? 'Posición'} · ${live['speed'] ?? 0} km/h',
                 ),
-                const SizedBox(height: 10),
-                _Line(
-                  Icons.route_outlined,
-                  [row.purpose, row.destination]
-                          .whereType<String>()
-                          .where((v) => v.isNotEmpty)
-                          .join(' · ')
-                          .isEmpty
-                      ? 'Sin detalle de viaje'
-                      : [row.purpose, row.destination]
-                            .whereType<String>()
-                            .where((v) => v.isNotEmpty)
-                            .join(' · '),
-                ),
-                const SizedBox(height: 7),
-                _Line(
-                  Icons.schedule_rounded,
-                  '${_dt(row.startsAt)} — ${_time(row.endsAt)}',
-                ),
-                if (row.nextAction != null || row.canCancel) ...[
-                  const Divider(height: 26),
-                  Wrap(
-                    spacing: 8,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      if (row.canCancel)
-                        TextButton.icon(
-                          onPressed: () => _runAction(row, 'cancel'),
-                          icon: const Icon(Icons.cancel_outlined),
-                          label: const Text('Cancelar'),
-                        ),
-                      if (row.nextAction != null)
-                        FilledButton.icon(
-                          onPressed: () => _runAction(row, row.nextAction!),
-                          icon: Icon(
-                            row.nextAction == 'start'
-                                ? Icons.play_arrow_rounded
-                                : Icons.flag_outlined,
-                          ),
-                          label: Text(
-                            row.nextAction == 'start' ? 'Iniciar' : 'Finalizar',
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
+                const SizedBox(height: 4),
+                Text('${live['lat'] ?? '—'}, ${live['lng'] ?? '—'}'),
               ],
             ),
           ),
-        );
-      },
+        if (trip.points.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _TripPanel(
+            title: 'Recorrido',
+            child: SizedBox(
+              height: 190,
+              width: double.infinity,
+              child: CustomPaint(painter: _TrajectoryPainter(trip.points)),
+            ),
+          ),
+        ],
+        if (trip.summary.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _TripPanel(
+            title: 'Resumen',
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 10,
+              children: trip.summary.entries
+                  .where((entry) => entry.value is num || entry.value is String)
+                  .take(8)
+                  .map(
+                    (entry) => Text('${_humanize(entry.key)}: ${entry.value}'),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+        if (_notices.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _TripPanel(
+            title: 'Multas y avisos confirmados',
+            child: Column(
+              children: _notices
+                  .map(
+                    (notice) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.gavel_outlined),
+                      title: Text(notice.reason ?? 'Aviso'),
+                      subtitle: Text(notice.location ?? notice.status),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+        if (trip.events.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _TripPanel(
+            title: 'Eventos del viaje',
+            child: Column(
+              children: trip.events
+                  .map(
+                    (event) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        event.isConfirmedFine
+                            ? Icons.gavel_outlined
+                            : Icons.info_outline_rounded,
+                      ),
+                      title: Text(event.label),
+                      subtitle: Text(
+                        [
+                          if (event.isPreventive && !event.isConfirmedFine)
+                            'Estimación preventiva; no es una multa.',
+                          if (event.detail != null) event.detail!,
+                        ].join('\n'),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
+
+class _TripPanel extends StatelessWidget {
+  const _TripPanel({required this.title, required this.child});
+  final String title;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE3E8EF)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
+    ),
+  );
+}
+
+class _TrajectoryPainter extends CustomPainter {
+  const _TrajectoryPainter(this.points);
+  final List<VehicleTripPoint> points;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFFF2F4F7),
+    );
+    final minLat = points
+        .map((p) => p.latitude)
+        .reduce((a, b) => a < b ? a : b);
+    final maxLat = points
+        .map((p) => p.latitude)
+        .reduce((a, b) => a > b ? a : b);
+    final minLng = points
+        .map((p) => p.longitude)
+        .reduce((a, b) => a < b ? a : b);
+    final maxLng = points
+        .map((p) => p.longitude)
+        .reduce((a, b) => a > b ? a : b);
+    final latSpan = (maxLat - minLat).abs() < 0.000001 ? 1.0 : maxLat - minLat;
+    final lngSpan = (maxLng - minLng).abs() < 0.000001 ? 1.0 : maxLng - minLng;
+    final path = Path();
+    for (var index = 0; index < points.length; index++) {
+      final point = points[index];
+      final x = 12 + ((point.longitude - minLng) / lngSpan) * (size.width - 24);
+      final y =
+          size.height -
+          12 -
+          ((point.latitude - minLat) / latSpan) * (size.height - 24);
+      if (index == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFF2563EB)
+        ..strokeWidth = 4
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrajectoryPainter oldDelegate) =>
+      oldDelegate.points != points;
+}
+
+String _humanize(String value) => value.replaceAll('_', ' ');
 
 class CreateVehicleReservationScreen extends StatefulWidget {
   const CreateVehicleReservationScreen({required this.gateway, super.key});

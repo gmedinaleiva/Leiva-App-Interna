@@ -44,6 +44,8 @@ class ExpenseRecord {
     this.merchant,
     this.rubric,
     this.reviewReason,
+    this.periodId,
+    this.fuelEvidence,
   });
 
   factory ExpenseRecord.fromJson(Map<String, dynamic> json) => ExpenseRecord(
@@ -60,6 +62,8 @@ class ExpenseRecord {
     merchant: json['merchant'] as String?,
     rubric: json['rubric'] as String?,
     reviewReason: json['review_reason'] as String?,
+    periodId: json['period_id'] as int?,
+    fuelEvidence: json['fuel_evidence'] as Map<String, dynamic>?,
   );
 
   final int id;
@@ -73,6 +77,16 @@ class ExpenseRecord {
   final String? merchant;
   final String? rubric;
   final String? reviewReason;
+  final int? periodId;
+  final Map<String, dynamic>? fuelEvidence;
+}
+
+class ExpenseFile {
+  const ExpenseFile({required this.bytes, required this.contentType});
+  final List<int> bytes;
+  final String contentType;
+  bool get isImage => contentType.startsWith('image/');
+  bool get isPdf => contentType == 'application/pdf';
 }
 
 class ExpenseDashboard {

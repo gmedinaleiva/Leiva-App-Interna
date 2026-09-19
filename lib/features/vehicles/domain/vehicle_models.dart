@@ -120,3 +120,135 @@ class VehicleReservationDraft {
   final int? occupantCount;
   final String? notes;
 }
+
+class VehicleTripPoint {
+  const VehicleTripPoint({
+    required this.latitude,
+    required this.longitude,
+    required this.speed,
+    this.at,
+  });
+
+  factory VehicleTripPoint.fromJson(Map<String, dynamic> json) =>
+      VehicleTripPoint(
+        latitude: (json['lat'] as num).toDouble(),
+        longitude: (json['lng'] as num).toDouble(),
+        speed: (json['speed'] as num?)?.toDouble() ?? 0,
+        at: json['at'] == null
+            ? null
+            : DateTime.tryParse(json['at'] as String)?.toLocal(),
+      );
+
+  final double latitude;
+  final double longitude;
+  final double speed;
+  final DateTime? at;
+}
+
+class VehicleTripEvent {
+  const VehicleTripEvent({
+    required this.kind,
+    required this.label,
+    this.detail,
+    this.at,
+  });
+
+  factory VehicleTripEvent.fromJson(Map<String, dynamic> json) =>
+      VehicleTripEvent(
+        kind: json['kind'] as String? ?? 'event',
+        label: json['label'] as String? ?? 'Evento',
+        detail: json['detail'] as String?,
+        at: json['at'] == null
+            ? null
+            : DateTime.tryParse(json['at'] as String)?.toLocal(),
+      );
+
+  final String kind;
+  final String label;
+  final String? detail;
+  final DateTime? at;
+
+  bool get isConfirmedFine => kind == 'fine';
+  bool get isPreventive => const {
+    'speed_sustained',
+    'speed_brief',
+    'speed_camera_estimate',
+    'speed_camera',
+  }.contains(kind);
+}
+
+class VehicleTripView {
+  const VehicleTripView({
+    required this.status,
+    required this.summary,
+    required this.points,
+    required this.events,
+    required this.live,
+    required this.fuel,
+  });
+
+  factory VehicleTripView.fromJson(Map<String, dynamic> json) =>
+      VehicleTripView(
+        status: json['status'] as String? ?? '',
+        summary: Map<String, dynamic>.unmodifiable(
+          json['summary'] as Map<String, dynamic>? ?? const {},
+        ),
+        points: _vehicleMaps(json['points'])
+            .where((item) => item['lat'] is num && item['lng'] is num)
+            .map(VehicleTripPoint.fromJson)
+            .toList(),
+        events: _vehicleMaps(json['events'])
+            .map(VehicleTripEvent.fromJson)
+            .toList(),
+        live: Map<String, dynamic>.unmodifiable(
+          json['live'] as Map<String, dynamic>? ?? const {},
+        ),
+        fuel: Map<String, dynamic>.unmodifiable(
+          json['fuel'] as Map<String, dynamic>? ?? const {},
+        ),
+      );
+
+  final String status;
+  final Map<String, dynamic> summary;
+  final List<VehicleTripPoint> points;
+  final List<VehicleTripEvent> events;
+  final Map<String, dynamic> live;
+  final Map<String, dynamic> fuel;
+}
+
+class VehicleNotice {
+  const VehicleNotice({
+    required this.id,
+    required this.status,
+    this.reason,
+    this.amount,
+    this.currency,
+    this.location,
+    this.infractionAt,
+  });
+
+  factory VehicleNotice.fromJson(Map<String, dynamic> json) => VehicleNotice(
+    id: json['id'] as int,
+    status: json['status'] as String,
+    reason: json['reason'] as String?,
+    amount: (json['amount'] as num?)?.toDouble(),
+    currency: json['currency'] as String?,
+    location: json['location'] as String?,
+    infractionAt: json['infraction_at'] == null
+        ? null
+        : DateTime.tryParse(json['infraction_at'] as String)?.toLocal(),
+  );
+
+  final int id;
+  final String status;
+  final String? reason;
+  final double? amount;
+  final String? currency;
+  final String? location;
+  final DateTime? infractionAt;
+}
+
+List<Map<String, dynamic>> _vehicleMaps(dynamic value) {
+  if (value is! List) return const [];
+  return value.cast<Map<String, dynamic>>();
+}

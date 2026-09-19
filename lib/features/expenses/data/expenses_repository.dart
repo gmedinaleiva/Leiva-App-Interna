@@ -5,6 +5,12 @@ abstract interface class ExpensesGateway {
   Future<ExpenseDashboard> dashboard();
   Future<ExpenseRubrics> rubrics();
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft);
+  Future<ExpenseRecord> record(int documentId);
+  Future<ExpenseFile> file(int documentId);
+  Future<ExpenseRecord> resubmit(int documentId);
+  Future<ExpenseRecord> validateFuel(int documentId);
+  Future<ExpenseRecord> saveFuelStatement(int documentId, String statement);
+  Future<ExpensePeriod> submitPeriod(int periodId);
 }
 
 class ExpensesRepository implements ExpensesGateway {
@@ -19,4 +25,25 @@ class ExpensesRepository implements ExpensesGateway {
 
   @override
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft) => _api.upload(draft);
+
+  @override
+  Future<ExpenseRecord> record(int documentId) => _api.record(documentId);
+
+  @override
+  Future<ExpenseFile> file(int documentId) => _api.file(documentId);
+
+  @override
+  Future<ExpenseRecord> resubmit(int documentId) => _api.resubmit(documentId);
+
+  @override
+  Future<ExpenseRecord> validateFuel(int documentId) =>
+      _api.validateFuel(documentId);
+
+  @override
+  Future<ExpenseRecord> saveFuelStatement(int documentId, String statement) =>
+      _api.saveFuelStatement(documentId, statement);
+
+  @override
+  Future<ExpensePeriod> submitPeriod(int periodId) =>
+      _api.submitPeriod(periodId);
 }

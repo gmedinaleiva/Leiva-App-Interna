@@ -58,6 +58,43 @@ class RoomsApi {
     return _items(data).map(RoomReservation.fromJson).toList();
   }
 
+  Future<RoomReservation> detail(int reservationId) async =>
+      RoomReservation.fromJson(
+        apiData(await _dio.get<dynamic>('room-reservations/$reservationId')),
+      );
+
+  Future<VisitorParkingOptions> visitorParkingOptions(
+    int reservationId, {
+    required String vehicleType,
+  }) async => VisitorParkingOptions.fromJson(
+    apiData(
+      await _dio.get<dynamic>(
+        'room-reservations/$reservationId/visitor-parking-options',
+        queryParameters: {'vehicle_type': vehicleType},
+      ),
+    ),
+  );
+
+  Future<Map<String, dynamic>> createVisitorParking(
+    int reservationId,
+    VisitorParkingDraft draft,
+  ) async => apiData(
+    await _dio.post<dynamic>(
+      'room-reservations/$reservationId/visitor-parking-requests',
+      data: {
+        'participant_id': draft.participantId,
+        'bay_id': draft.bayId,
+        'vehicle_type': draft.vehicleType,
+        'plate': draft.plate,
+        'notes': draft.notes,
+      },
+      options: Options(
+        contentType: Headers.jsonContentType,
+        headers: {'Idempotency-Key': draft.idempotencyKey},
+      ),
+    ),
+  );
+
   Future<RoomReservation> create(RoomReservationDraft draft) async {
     final response = await _dio.post<dynamic>(
       'room-reservations',

@@ -4,36 +4,48 @@ import '../config/app_config.dart';
 import '../security/secure_session_store.dart';
 
 class ApiClient {
-  ApiClient({required AppConfig config, required SessionStore sessionStore})
-    : dio = Dio(
-        BaseOptions(
-          baseUrl: '${config.apiBaseUri}/',
-          connectTimeout: const Duration(seconds: 12),
-          sendTimeout: const Duration(seconds: 12),
-          receiveTimeout: const Duration(seconds: 18),
-          followRedirects: false,
-          validateStatus: (status) =>
-              status != null && status >= 100 && status < 600,
-          headers: const {'Accept': 'application/json'},
-        ),
-      ) {
+  ApiClient({
+    required AppConfig config,
+    required SessionStore sessionStore,
+    this.onUnauthorized,
+    this.onForbidden,
+  }) : dio = Dio(
+         BaseOptions(
+           baseUrl: '${config.apiBaseUri}/',
+           connectTimeout: const Duration(seconds: 12),
+           sendTimeout: const Duration(seconds: 12),
+           receiveTimeout: const Duration(seconds: 18),
+           followRedirects: false,
+           validateStatus: (status) =>
+               status != null && status >= 100 && status < 600,
+           headers: const {'Accept': 'application/json'},
+         ),
+       ) {
     dio.interceptors.add(
       _SessionInterceptor(
         sessionStore: sessionStore,
         expectedBaseUri: config.apiBaseUri,
+        onUnauthorized: onUnauthorized,
+        onForbidden: onForbidden,
       ),
     );
   }
 
-  ApiClient.withDio(this.dio);
+  ApiClient.withDio(this.dio) : onUnauthorized = null, onForbidden = null;
 
   final Dio dio;
+  final VoidCallback? onUnauthorized;
+  final VoidCallback? onForbidden;
 }
+
+typedef VoidCallback = void Function();
 
 class _SessionInterceptor extends Interceptor {
   _SessionInterceptor({
     required this.sessionStore,
     required this.expectedBaseUri,
+    this.onUnauthorized,
+    this.onForbidden,
   });
 
   static const cookieName = '__Host-leiva_app_session';
@@ -41,6 +53,8 @@ class _SessionInterceptor extends Interceptor {
 
   final SessionStore sessionStore;
   final Uri expectedBaseUri;
+  final VoidCallback? onUnauthorized;
+  final VoidCallback? onForbidden;
 
   bool _isExpectedDestination(Uri uri) =>
       uri.scheme == 'https' &&
@@ -94,6 +108,12 @@ class _SessionInterceptor extends Interceptor {
     Response<dynamic> response,
     ResponseInterceptorHandler handler,
   ) async {
+    if (response.statusCode == 401) {
+      await sessionStore.clear();
+      onUnauthorized?.call();
+    } else if (response.statusCode == 403) {
+      onForbidden?.call();
+    }
     final cookies = response.headers.map['set-cookie'] ?? const <String>[];
     for (final header in cookies) {
       final match = RegExp(

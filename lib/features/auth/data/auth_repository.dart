@@ -10,6 +10,7 @@ abstract interface class AuthGateway {
     required String username,
     required String password,
     required String deviceName,
+    required String clientPlatform,
   });
 
   Future<void> logout();
@@ -48,11 +49,13 @@ class AuthRepository implements AuthGateway {
     required String username,
     required String password,
     required String deviceName,
+    required String clientPlatform,
   }) async {
     final session = await _api.login(
       username: username,
       password: password,
       deviceName: deviceName,
+      clientPlatform: clientPlatform,
     );
     final cookie = await _sessionStore.readSessionCookie();
     if (cookie == null || cookie.isEmpty) {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'core/config/app_config.dart';
@@ -20,7 +21,44 @@ import 'features/vehicles/data/vehicles_api.dart';
 import 'features/vehicles/data/vehicles_repository.dart';
 import 'features/vehicles/presentation/vehicles_screen.dart';
 
-void main() => runApp(const LeivaApp());
+void main() =>
+    runApp(kIsWeb ? const _WebPilotUnavailableApp() : const LeivaApp());
+
+class _WebPilotUnavailableApp extends StatelessWidget {
+  const _WebPilotUnavailableApp();
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: const Padding(
+            padding: EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.phone_android_rounded, size: 52),
+                SizedBox(height: 18),
+                Text(
+                  'Piloto disponible en la app móvil',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'El acceso web permanece deshabilitado durante esta etapa.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
 abstract final class AppColors {
   static const red = Color(0xFFDC1F26);
@@ -65,10 +103,17 @@ class _LeivaAppState extends State<LeivaApp> {
     _ownsAuthController = widget.authController == null;
     if (widget.authController == null) {
       final sessionStore = SecureSessionStore();
-      final client = ApiClient(config: AppConfig(), sessionStore: sessionStore);
-      _authController = AuthController(
+      late final AuthController controller;
+      final client = ApiClient(
+        config: AppConfig(),
+        sessionStore: sessionStore,
+        onUnauthorized: () => controller.invalidateSession(),
+        onForbidden: () => controller.refreshSession(),
+      );
+      controller = AuthController(
         AuthRepository(AuthApi(client.dio), sessionStore),
       );
+      _authController = controller;
       _roomsGateway = RoomsRepository(RoomsApi(client.dio));
       _vehiclesGateway = VehiclesRepository(VehiclesApi(client.dio));
       _parkingGateway = ParkingRepository(ParkingApi(client.dio));

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -70,6 +72,16 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       ),
     );
     if (uploaded == true) await _load();
+  }
+
+  Future<void> _openRecord(ExpenseRecord record) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            ExpenseRecordScreen(gateway: widget.gateway, documentId: record.id),
+      ),
+    );
+    if (changed == true) await _load();
   }
 
   @override
@@ -153,12 +165,253 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ...data.records.map(
             (record) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _RecordCard(record),
+              child: _RecordCard(record, onTap: () => _openRecord(record)),
             ),
           ),
       ],
     );
   }
+}
+
+class ExpenseRecordScreen extends StatefulWidget {
+  const ExpenseRecordScreen({
+    required this.gateway,
+    required this.documentId,
+    super.key,
+  });
+  final ExpensesGateway gateway;
+  final int documentId;
+
+  @override
+  State<ExpenseRecordScreen> createState() => _ExpenseRecordScreenState();
+}
+
+class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
+  ExpenseRecord? _record;
+  ExpenseFile? _file;
+  String? _error;
+  bool _working = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final record = await widget.gateway.record(widget.documentId);
+      if (!mounted) return;
+      setState(() {
+        _record = record;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _expenseMessage(error));
+    }
+  }
+
+  Future<void> _preview() async {
+    setState(() {
+      _working = true;
+      _error = null;
+    });
+    try {
+      final file = await widget.gateway.file(widget.documentId);
+      if (!mounted) return;
+      setState(() {
+        _file = file;
+        _working = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
+  Future<void> _resubmit() async {
+    setState(() => _working = true);
+    try {
+      await widget.gateway.resubmit(widget.documentId);
+      if (!mounted) return;
+      setState(() => _working = false);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Comprobante reenviado.')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
+  Future<void> _validateFuel() async {
+    setState(() => _working = true);
+    try {
+      await widget.gateway.validateFuel(widget.documentId);
+      if (!mounted) return;
+      setState(() => _working = false);
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
+  Future<void> _statement() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Descargo de combustible'),
+        content: TextField(
+          controller: controller,
+          minLines: 3,
+          maxLines: 6,
+          decoration: const InputDecoration(labelText: 'Descargo'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, controller.text.trim().length >= 8),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      controller.dispose();
+      return;
+    }
+    final value = controller.text.trim();
+    controller.dispose();
+    setState(() => _working = true);
+    try {
+      await widget.gateway.saveFuelStatement(widget.documentId, value);
+      if (!mounted) return;
+      setState(() => _working = false);
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Detalle del comprobante'),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+    ),
+    body: _record == null && _error == null
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              if (_record != null) ...[
+                Text(
+                  _record!.merchant ?? _record!.title,
+                  style: const TextStyle(
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _money(_record!.amount, _record!.currency),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFEA580C),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('${_record!.rubric ?? 'Sin rubro'} · ${_record!.status}'),
+                if (_record!.reviewReason?.isNotEmpty == true)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      _record!.reviewReason!,
+                      style: const TextStyle(color: Color(0xFFB42318)),
+                    ),
+                  ),
+                const SizedBox(height: 20),
+                if (_record!.hasFile)
+                  OutlinedButton.icon(
+                    onPressed: _working ? null : _preview,
+                    icon: const Icon(Icons.visibility_outlined),
+                    label: const Text('Ver comprobante'),
+                  ),
+                if (_file?.isImage == true) ...[
+                  const SizedBox(height: 14),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(Uint8List.fromList(_file!.bytes)),
+                  ),
+                ] else if (_file?.isPdf == true) ...[
+                  const SizedBox(height: 14),
+                  const _SmallEmpty(
+                    'El PDF fue validado y recuperado de forma segura. La vista PDF integrada se incorporará con el visor corporativo.',
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _working ? null : _validateFuel,
+                      icon: const Icon(Icons.local_gas_station_outlined),
+                      label: const Text('Validar combustible'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _working ? null : _statement,
+                      icon: const Icon(Icons.edit_note_outlined),
+                      label: const Text('Cargar descargo'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _working ? null : _resubmit,
+                      icon: const Icon(Icons.send_outlined),
+                      label: const Text('Reenviar observado'),
+                    ),
+                  ],
+                ),
+              ],
+              if (_working)
+                const Padding(
+                  padding: EdgeInsets.only(top: 16),
+                  child: LinearProgressIndicator(),
+                ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Color(0xFFB42318)),
+                  ),
+                ),
+            ],
+          ),
+  );
 }
 
 class CreateExpenseScreen extends StatefulWidget {
@@ -470,54 +723,62 @@ class _PeriodCard extends StatelessWidget {
 }
 
 class _RecordCard extends StatelessWidget {
-  const _RecordCard(this.record);
+  const _RecordCard(this.record, {this.onTap});
   final ExpenseRecord record;
+  final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: _expenseBox(),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _expenseBox(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                record.merchant ?? record.title,
-                style: const TextStyle(fontWeight: FontWeight.w800),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    record.merchant ?? record.title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  _money(record.amount, record.currency),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Text(
+              [
+                record.rubric,
+                record.date == null ? null : _expenseDate(record.date!),
+              ].whereType<String>().join(' · '),
+              style: const TextStyle(color: Color(0xFF667085)),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              record.status,
+              style: const TextStyle(
+                color: Color(0xFFEA580C),
+                fontWeight: FontWeight.w700,
               ),
             ),
-            Text(
-              _money(record.amount, record.currency),
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
+            if (record.reviewReason?.isNotEmpty == true)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  record.reviewReason!,
+                  style: const TextStyle(color: Color(0xFFB42318)),
+                ),
+              ),
           ],
         ),
-        const SizedBox(height: 7),
-        Text(
-          [
-            record.rubric,
-            record.date == null ? null : _expenseDate(record.date!),
-          ].whereType<String>().join(' · '),
-          style: const TextStyle(color: Color(0xFF667085)),
-        ),
-        const SizedBox(height: 7),
-        Text(
-          record.status,
-          style: const TextStyle(
-            color: Color(0xFFEA580C),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (record.reviewReason?.isNotEmpty == true)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              record.reviewReason!,
-              style: const TextStyle(color: Color(0xFFB42318)),
-            ),
-          ),
-      ],
+      ),
     ),
   );
 }

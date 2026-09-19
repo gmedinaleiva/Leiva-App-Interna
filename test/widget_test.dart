@@ -169,6 +169,7 @@ class _FakeAuthGateway implements AuthGateway {
     required String username,
     required String password,
     required String deviceName,
+    required String clientPlatform,
   }) async {
     lastUsername = username;
     lastPassword = password;
@@ -194,6 +195,22 @@ class _FakeAuthGateway implements AuthGateway {
 }
 
 class _FakeRoomsGateway implements RoomsGateway {
+  @override
+  Future<RoomReservation> detail(int reservationId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<VisitorParkingOptions> visitorParkingOptions(
+    int reservationId, {
+    required String vehicleType,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<Map<String, dynamic>> createVisitorParking(
+    int reservationId,
+    VisitorParkingDraft draft,
+  ) => throw UnimplementedError();
+
   @override
   Future<List<RoomBranch>> branches() async => const [
     RoomBranch(id: 1, code: 'CASA', name: 'Casa Central'),
@@ -252,6 +269,20 @@ class _FakeVehiclesGateway implements VehiclesGateway {
   @override
   Future<VehicleReservation> create(VehicleReservationDraft draft) =>
       throw UnimplementedError();
+
+  @override
+  Future<VehicleReservation> extend(
+    int reservationId,
+    DateTime endsAt, {
+    String? notes,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<List<VehicleNotice>> notices({int? reservationId}) async => const [];
+
+  @override
+  Future<VehicleTripView> trip(int reservationId, {required bool live}) =>
+      throw UnimplementedError();
 }
 
 class _FakeParkingGateway implements ParkingGateway {
@@ -280,6 +311,27 @@ class _FakeParkingGateway implements ParkingGateway {
 }
 
 class _FakeExpensesGateway implements ExpensesGateway {
+  @override
+  Future<ExpenseFile> file(int documentId) => throw UnimplementedError();
+
+  @override
+  Future<ExpenseRecord> record(int documentId) => throw UnimplementedError();
+
+  @override
+  Future<ExpenseRecord> resubmit(int documentId) => throw UnimplementedError();
+
+  @override
+  Future<ExpenseRecord> saveFuelStatement(int documentId, String statement) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ExpensePeriod> submitPeriod(int periodId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ExpenseRecord> validateFuel(int documentId) =>
+      throw UnimplementedError();
+
   @override
   Future<ExpenseDashboard> dashboard() async => const ExpenseDashboard(
     capabilities: {

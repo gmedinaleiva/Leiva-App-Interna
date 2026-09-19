@@ -13,6 +13,13 @@ abstract interface class VehiclesGateway {
     String action, {
     String? notes,
   });
+  Future<VehicleReservation> extend(
+    int reservationId,
+    DateTime endsAt, {
+    String? notes,
+  });
+  Future<VehicleTripView> trip(int reservationId, {required bool live});
+  Future<List<VehicleNotice>> notices({int? reservationId});
 }
 
 class VehiclesRepository implements VehiclesGateway {
@@ -38,4 +45,19 @@ class VehiclesRepository implements VehiclesGateway {
     String action, {
     String? notes,
   }) => _api.action(reservationId, action, notes: notes);
+
+  @override
+  Future<VehicleReservation> extend(
+    int reservationId,
+    DateTime endsAt, {
+    String? notes,
+  }) => _api.extend(reservationId, endsAt, notes: notes);
+
+  @override
+  Future<VehicleTripView> trip(int reservationId, {required bool live}) =>
+      _api.trip(reservationId, live: live);
+
+  @override
+  Future<List<VehicleNotice>> notices({int? reservationId}) =>
+      _api.notices(reservationId: reservationId);
 }

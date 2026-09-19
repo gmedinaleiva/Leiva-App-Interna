@@ -23,6 +23,30 @@ class AuthController extends ChangeNotifier {
   AuthSession? session;
   String? message;
   int? retryAfterSeconds;
+  bool _refreshingSession = false;
+
+  void invalidateSession() {
+    session = null;
+    status = AuthStatus.unauthenticated;
+    message = 'La sesión venció. Ingresá nuevamente.';
+    notifyListeners();
+  }
+
+  Future<void> refreshSession() async {
+    if (_refreshingSession || status != AuthStatus.authenticated) return;
+    _refreshingSession = true;
+    try {
+      final refreshed = await _repository.restoreSession();
+      if (refreshed == null) {
+        invalidateSession();
+      } else {
+        session = refreshed;
+        notifyListeners();
+      }
+    } finally {
+      _refreshingSession = false;
+    }
+  }
 
   Future<void> initialize() async {
     try {
@@ -46,10 +70,17 @@ class AuthController extends ChangeNotifier {
     retryAfterSeconds = null;
     notifyListeners();
     try {
+      final clientPlatform = switch (defaultTargetPlatform) {
+        TargetPlatform.iOS => 'ios',
+        _ => 'android',
+      };
       session = await _repository.login(
         username: username.trim(),
         password: password,
-        deviceName: 'Leiva App Android',
+        deviceName: clientPlatform == 'ios'
+            ? 'Leiva App iOS'
+            : 'Leiva App Android',
+        clientPlatform: clientPlatform,
       );
       status = AuthStatus.authenticated;
     } on ApiFailure catch (error) {

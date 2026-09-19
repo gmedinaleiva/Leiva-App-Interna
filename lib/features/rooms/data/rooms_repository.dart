@@ -13,6 +13,15 @@ abstract interface class RoomsGateway {
     required DateTime from,
     required DateTime to,
   });
+  Future<RoomReservation> detail(int reservationId);
+  Future<VisitorParkingOptions> visitorParkingOptions(
+    int reservationId, {
+    required String vehicleType,
+  });
+  Future<Map<String, dynamic>> createVisitorParking(
+    int reservationId,
+    VisitorParkingDraft draft,
+  );
   Future<RoomReservation> create(RoomReservationDraft draft);
   Future<RoomReservation> cancel(int reservationId, {String? reason});
 }
@@ -40,6 +49,22 @@ class RoomsRepository implements RoomsGateway {
     required DateTime from,
     required DateTime to,
   }) => _api.reservations(from: from, to: to);
+
+  @override
+  Future<RoomReservation> detail(int reservationId) =>
+      _api.detail(reservationId);
+
+  @override
+  Future<VisitorParkingOptions> visitorParkingOptions(
+    int reservationId, {
+    required String vehicleType,
+  }) => _api.visitorParkingOptions(reservationId, vehicleType: vehicleType);
+
+  @override
+  Future<Map<String, dynamic>> createVisitorParking(
+    int reservationId,
+    VisitorParkingDraft draft,
+  ) => _api.createVisitorParking(reservationId, draft);
 
   @override
   Future<RoomReservation> create(RoomReservationDraft draft) =>

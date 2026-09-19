@@ -112,6 +112,18 @@ class _RoomsScreenState extends State<RoomsScreen> {
     }
   }
 
+  Future<void> _openDetail(RoomReservation reservation) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => RoomReservationDetailScreen(
+          gateway: widget.gateway,
+          reservationId: reservation.id,
+        ),
+      ),
+    );
+    if (changed == true) await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -181,9 +193,361 @@ class _RoomsScreenState extends State<RoomsScreen> {
         final reservation = _reservations[index];
         return _ReservationCard(
           reservation: reservation,
+          onTap: () => _openDetail(reservation),
           onCancel: reservation.canCancel ? () => _cancel(reservation) : null,
         );
       },
+    );
+  }
+}
+
+class RoomReservationDetailScreen extends StatefulWidget {
+  const RoomReservationDetailScreen({
+    required this.gateway,
+    required this.reservationId,
+    super.key,
+  });
+
+  final RoomsGateway gateway;
+  final int reservationId;
+
+  @override
+  State<RoomReservationDetailScreen> createState() =>
+      _RoomReservationDetailScreenState();
+}
+
+class _RoomReservationDetailScreenState
+    extends State<RoomReservationDetailScreen> {
+  RoomReservation? _reservation;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final row = await widget.gateway.detail(widget.reservationId);
+      if (!mounted) return;
+      setState(() {
+        _reservation = row;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _messageFor(error));
+    }
+  }
+
+  Future<void> _visitorParking() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => VisitorParkingScreen(
+          gateway: widget.gateway,
+          reservationId: widget.reservationId,
+        ),
+      ),
+    );
+    if (created == true) await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Detalle de la sala'),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+    ),
+    body: _error != null
+        ? _MessageCard(
+            icon: Icons.error_outline,
+            title: 'No pudimos abrir la reserva',
+            message: _error!,
+          )
+        : _reservation == null
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text(
+                _reservation!.title,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _InfoLine(
+                Icons.meeting_room_outlined,
+                '${_reservation!.room.name} · ${_reservation!.room.branchName ?? 'Sucursal'}',
+              ),
+              const SizedBox(height: 8),
+              _InfoLine(
+                Icons.schedule_rounded,
+                '${_formatDateTime(_reservation!.startsAt)} — ${_formatTime(_reservation!.endsAt)}',
+              ),
+              if (_reservation!.notes?.isNotEmpty == true) ...[
+                const SizedBox(height: 16),
+                Text(_reservation!.notes!),
+              ],
+              if (_reservation!.participants.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                const Text(
+                  'Participantes',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                ..._reservation!.participants.map(
+                  (person) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      person.isExternal
+                          ? Icons.badge_outlined
+                          : Icons.person_outline,
+                    ),
+                    title: Text(person.name),
+                    subtitle: person.organization == null
+                        ? null
+                        : Text(person.organization!),
+                  ),
+                ),
+              ],
+              if (_reservation!.visitorParking.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Dársenas de visitantes',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                ..._reservation!.visitorParking.map(
+                  (request) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.local_parking_outlined),
+                    title: Text(
+                      request['guest_name'] as String? ??
+                          request['plate'] as String? ??
+                          'Solicitud',
+                    ),
+                    subtitle: Text(request['status'] as String? ?? ''),
+                  ),
+                ),
+              ],
+              if (_reservation!.participants.any(
+                (person) => person.isExternal,
+              )) ...[
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: _visitorParking,
+                  icon: const Icon(Icons.local_parking_outlined),
+                  label: const Text('Solicitar dársena para visitante'),
+                ),
+              ],
+            ],
+          ),
+  );
+}
+
+class VisitorParkingScreen extends StatefulWidget {
+  const VisitorParkingScreen({
+    required this.gateway,
+    required this.reservationId,
+    super.key,
+  });
+  final RoomsGateway gateway;
+  final int reservationId;
+
+  @override
+  State<VisitorParkingScreen> createState() => _VisitorParkingScreenState();
+}
+
+class _VisitorParkingScreenState extends State<VisitorParkingScreen> {
+  final _idempotencyKey = newIdempotencyKey();
+  final _plate = TextEditingController();
+  final _notes = TextEditingController();
+  String _vehicleType = 'auto';
+  VisitorParkingOptions? _options;
+  int? _participantId;
+  int? _bayId;
+  String? _error;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _plate.dispose();
+    _notes.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final options = await widget.gateway.visitorParkingOptions(
+        widget.reservationId,
+        vehicleType: _vehicleType,
+      );
+      if (!mounted) return;
+      setState(() {
+        _options = options;
+        _participantId = options.visitors
+            .where((row) => !row.hasActiveRequest)
+            .firstOrNull
+            ?.id;
+        _bayId = options.bays.where((row) => row.available).firstOrNull?.id;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _messageFor(error));
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_participantId == null || _bayId == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.gateway.createVisitorParking(
+        widget.reservationId,
+        VisitorParkingDraft(
+          idempotencyKey: _idempotencyKey,
+          participantId: _participantId!,
+          bayId: _bayId!,
+          vehicleType: _vehicleType,
+          plate: _plate.text.trim().isEmpty
+              ? null
+              : _plate.text.trim().toUpperCase(),
+          notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _messageFor(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visitors =
+        _options?.visitors.where((row) => !row.hasActiveRequest).toList() ??
+        const <VisitorParkingOption>[];
+    final bays =
+        _options?.bays.where((row) => row.available).toList() ??
+        const <VisitorParkingBay>[];
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dársena para visitante'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+      body: _options == null && _error == null
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: _vehicleType,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de vehículo',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'auto', child: Text('Auto')),
+                    DropdownMenuItem(
+                      value: 'camioneta',
+                      child: Text('Camioneta'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'utilitario',
+                      child: Text('Utilitario'),
+                    ),
+                  ],
+                  onChanged: (value) async {
+                    if (value == null) return;
+                    setState(() => _vehicleType = value);
+                    await _load();
+                  },
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: _participantId,
+                  decoration: const InputDecoration(labelText: 'Visitante'),
+                  items: visitors
+                      .map(
+                        (row) => DropdownMenuItem(
+                          value: row.id,
+                          child: Text(row.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) => setState(() => _participantId = value),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: _bayId,
+                  decoration: const InputDecoration(
+                    labelText: 'Dársena disponible',
+                  ),
+                  items: bays
+                      .map(
+                        (row) => DropdownMenuItem(
+                          value: row.id,
+                          child: Text(
+                            '${row.name}${row.sector == null ? '' : ' · ${row.sector}'}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) => setState(() => _bayId = value),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _plate,
+                  maxLength: 30,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Patente (opcional)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _notes,
+                  maxLines: 3,
+                  maxLength: 4000,
+                  decoration: const InputDecoration(
+                    labelText: 'Observación (opcional)',
+                  ),
+                ),
+                if (_error != null)
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: Color(0xFFB42318)),
+                  ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: _saving || _participantId == null || _bayId == null
+                      ? null
+                      : _submit,
+                  icon: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send_rounded),
+                  label: Text(_saving ? 'Enviando...' : 'Enviar solicitud'),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -450,9 +814,14 @@ class _CreateRoomReservationScreenState
 }
 
 class _ReservationCard extends StatelessWidget {
-  const _ReservationCard({required this.reservation, this.onCancel});
+  const _ReservationCard({
+    required this.reservation,
+    this.onTap,
+    this.onCancel,
+  });
 
   final RoomReservation reservation;
+  final VoidCallback? onTap;
   final VoidCallback? onCancel;
 
   @override
@@ -468,47 +837,51 @@ class _ReservationCard extends StatelessWidget {
         side: const BorderSide(color: Color(0xFFE3E8EF)),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    reservation.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      reservation.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                _StatusChip(status: reservation.status),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _InfoLine(
-              Icons.meeting_room_outlined,
-              '${reservation.room.name} · ${reservation.room.branchName ?? 'Sucursal'}',
-            ),
-            const SizedBox(height: 7),
-            _InfoLine(
-              Icons.schedule_rounded,
-              '${_formatDateTime(reservation.startsAt)} — ${_formatTime(reservation.endsAt)}',
-            ),
-            if (onCancel != null && !cancelled) ...[
-              const Divider(height: 26),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: onCancel,
-                  icon: const Icon(Icons.cancel_outlined),
-                  label: const Text('Cancelar'),
-                ),
+                  _StatusChip(status: reservation.status),
+                ],
               ),
+              const SizedBox(height: 12),
+              _InfoLine(
+                Icons.meeting_room_outlined,
+                '${reservation.room.name} · ${reservation.room.branchName ?? 'Sucursal'}',
+              ),
+              const SizedBox(height: 7),
+              _InfoLine(
+                Icons.schedule_rounded,
+                '${_formatDateTime(reservation.startsAt)} — ${_formatTime(reservation.endsAt)}',
+              ),
+              if (onCancel != null && !cancelled) ...[
+                const Divider(height: 26),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: onCancel,
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text('Cancelar'),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
