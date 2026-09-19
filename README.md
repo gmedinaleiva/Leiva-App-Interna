@@ -2,7 +2,14 @@
 
 Aplicación Flutter de uso interno de Leiva Hermanos SA. Plataformas iniciales: Android y web.
 
-La pantalla inicial permite comprobar el arranque y la interacción. La integración con el portal de la empresa todavía no está implementada.
+La autenticación Android está integrada con la API segura del portal. Los módulos funcionales permanecen bloqueados hasta que sus endpoints y permisos estén disponibles.
+
+## Inicio rápido en Windows
+
+Hacer doble clic en `Iniciar-Leiva-App.cmd` desde la carpeta del proyecto. El
+iniciador enciende `Leiva_API_36` si está apagado, espera el arranque de Android
+y abre Leiva Interna. Si la aplicación todavía no está instalada, utiliza el
+APK de depuración disponible en `build`.
 
 ## Entorno de desarrollo
 
@@ -59,7 +66,7 @@ La compilación web queda en `build/web`. El APK de pruebas queda en `build/app/
 
 ## Conexión al portal
 
-Antes de implementar la conexión necesitamos la URL del portal, documentación de su API si existe y el mecanismo de autenticación. No guardar contraseñas, tokens ni claves en el repositorio o en el código de la app.
+El cliente Android usa `https://monitor.leivahnos.com.ar/api/app/v1`. No guardar contraseñas, tokens ni claves en el repositorio o en el código de la app.
 
 ## Referencias
 
