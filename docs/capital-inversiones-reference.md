@@ -1,16 +1,28 @@
 # Referencia vigente: Capital Inversiones Stage
 
+## Verificación vigente de la API móvil
+
+El 18/09/2026 se verificó nuevamente `origin/WSL-DEV` en
+`6f046df1873bfd26f9204791f2ec69cd00679763`. La API móvil publicada en ese
+commit contiene sólo autenticación bajo `app/api/app_v1/auth.py`. El router
+incluye únicamente `auth.router` y devuelve en `false` las capacidades de
+reservas de vehículos, salas, estacionamiento y gastos.
+
+Por lo tanto, Flutter no debe retirar los candados todavía. El siguiente corte
+acordado está definido en [rooms-module-backend-handoff.md](rooms-module-backend-handoff.md)
+y comienza con Reservas de salas.
+
 Revisión estática realizada el 18/09/2026 sobre el código publicado en GitHub.
 
 | Dato | Referencia verificada |
 |---|---|
 | Repositorio canónico | `git@github.com:sistemas-leivahnos/WSL-Capital-Inversiones.git` |
 | Rama | `WSL-DEV` |
-| Commit | `da5ccd7cb4de5b29692d24cd1f23887c1fb27cdd` |
+| Commit remoto vigente | `6f046df1873bfd26f9204791f2ec69cd00679763` |
 | Checkout de origen | `/opt/stacks/capital-inversiones-stage/capital-inversiones` |
 | Rama de la app Flutter | `DEV` de `gmedinaleiva/Leiva-App-Interna` |
 
-La consulta remota con `git fetch`/`ls-remote` confirmó que `origin/WSL-DEV` apunta al commit indicado. `master` pertenece a una línea anterior y no representa Capital Inversiones Stage.
+La consulta remota con `git ls-remote` confirmó que `origin/WSL-DEV` apunta al commit indicado. `master` pertenece a una línea anterior y no representa Capital Inversiones Stage. El relevamiento funcional amplio que sigue se originó en `da5ccd7`; la verificación puntual de la API móvil fue repetida sobre `6f046df`.
 
 La revisión previa del repositorio `gmedinaleiva/capital-inversiones` en `7ee9fcae3d51c960aaab88a6a797db9a8c69afe0` queda reemplazada por este documento. Sus conclusiones sobre estética, autenticación, módulos y APIs no deben usarse para desarrollar la aplicación Flutter.
 
