@@ -4,8 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:leiva_app_interna/features/auth/data/auth_repository.dart';
 import 'package:leiva_app_interna/features/auth/domain/auth_session.dart';
 import 'package:leiva_app_interna/features/auth/presentation/auth_controller.dart';
+import 'package:leiva_app_interna/features/expenses/data/expenses_repository.dart';
+import 'package:leiva_app_interna/features/expenses/domain/expense_models.dart';
+import 'package:leiva_app_interna/features/parking/data/parking_repository.dart';
+import 'package:leiva_app_interna/features/parking/domain/parking_models.dart';
 import 'package:leiva_app_interna/features/rooms/data/rooms_repository.dart';
 import 'package:leiva_app_interna/features/rooms/domain/room_models.dart';
+import 'package:leiva_app_interna/features/vehicles/data/vehicles_repository.dart';
+import 'package:leiva_app_interna/features/vehicles/domain/vehicle_models.dart';
 import 'package:leiva_app_interna/main.dart';
 
 void main() {
@@ -80,6 +86,71 @@ void main() {
       find.byKey(const Key('createRoomReservationButton')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('habilita y abre los módulos integrales autorizados', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(430, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final auth = _FakeAuthGateway(
+      capabilities: const AppCapabilities({
+        'vehicle_reservations': {'view': true, 'create': true},
+        'room_reservations': {'view': true, 'create': true},
+        'parking_requests': {'view': true, 'create': true},
+        'my_expenses': {
+          'view': true,
+          'upload': true,
+          'benefits': true,
+          'travel': true,
+          'advances': true,
+        },
+      }),
+    );
+    final controller = AuthController(auth);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      LeivaApp(
+        authController: controller,
+        roomsGateway: _FakeRoomsGateway(),
+        vehiclesGateway: _FakeVehiclesGateway(),
+        parkingGateway: _FakeParkingGateway(),
+        expensesGateway: _FakeExpensesGateway(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('usernameField')), 'piloto');
+    await tester.enterText(find.byKey(const Key('passwordField')), 'secreto');
+    await tester.ensureVisible(find.byKey(const Key('loginButton')));
+    await tester.tap(find.byKey(const Key('loginButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Disponible'), findsNWidgets(4));
+
+    await tester.tap(find.text('Reservas de vehículos'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Todavía no tenés reservas de vehículos.'),
+      findsOneWidget,
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Estacionamiento'));
+    await tester.tap(find.text('Estacionamiento'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Todavía no tenés solicitudes de estacionamiento.'),
+      findsOneWidget,
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Mis gastos'));
+    await tester.tap(find.text('Mis gastos'));
+    await tester.pumpAndSettle();
+    expect(find.text('No tenés comprobantes cargados.'), findsOneWidget);
+    expect(find.byKey(const Key('createExpenseButton')), findsOneWidget);
   });
 }
 
@@ -159,4 +230,74 @@ class _FakeRoomsGateway implements RoomsGateway {
 
   @override
   Future<List<MeetingRoom>> rooms(int branchId) async => const [];
+}
+
+class _FakeVehiclesGateway implements VehiclesGateway {
+  @override
+  Future<List<VehicleOption>> available({
+    required DateTime from,
+    required DateTime to,
+  }) async => const [];
+
+  @override
+  Future<List<VehicleReservation>> reservations() async => const [];
+
+  @override
+  Future<VehicleReservation> action(
+    int reservationId,
+    String action, {
+    String? notes,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<VehicleReservation> create(VehicleReservationDraft draft) =>
+      throw UnimplementedError();
+}
+
+class _FakeParkingGateway implements ParkingGateway {
+  @override
+  Future<List<ParkingBranch>> branches() async => const [
+    ParkingBranch(id: 1, name: 'Casa Central'),
+  ];
+
+  @override
+  Future<List<ParkingBay>> bays({
+    required int branchId,
+    required DateTime from,
+    required DateTime to,
+    required String vehicleType,
+  }) async => const [];
+
+  @override
+  Future<List<ParkingRequest>> requests() async => const [];
+
+  @override
+  Future<ParkingRequest> cancel(int requestId) => throw UnimplementedError();
+
+  @override
+  Future<ParkingRequest> create(ParkingRequestDraft draft) =>
+      throw UnimplementedError();
+}
+
+class _FakeExpensesGateway implements ExpensesGateway {
+  @override
+  Future<ExpenseDashboard> dashboard() async => const ExpenseDashboard(
+    capabilities: {
+      'view': true,
+      'upload': true,
+      'benefits': true,
+      'travel': true,
+    },
+    periods: [],
+    records: [],
+    alerts: [],
+  );
+
+  @override
+  Future<ExpenseRubrics> rubrics() async =>
+      const ExpenseRubrics(travel: ['Combustible'], benefits: ['Beneficio']);
+
+  @override
+  Future<ExpenseRecord> upload(ExpenseUploadDraft draft) =>
+      throw UnimplementedError();
 }

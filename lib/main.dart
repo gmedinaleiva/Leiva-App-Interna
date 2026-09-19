@@ -7,9 +7,18 @@ import 'features/auth/data/auth_api.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/auth/domain/auth_session.dart';
 import 'features/auth/presentation/auth_controller.dart';
+import 'features/expenses/data/expenses_api.dart';
+import 'features/expenses/data/expenses_repository.dart';
+import 'features/expenses/presentation/expenses_screen.dart';
+import 'features/parking/data/parking_api.dart';
+import 'features/parking/data/parking_repository.dart';
+import 'features/parking/presentation/parking_screen.dart';
 import 'features/rooms/data/rooms_api.dart';
 import 'features/rooms/data/rooms_repository.dart';
 import 'features/rooms/presentation/rooms_screen.dart';
+import 'features/vehicles/data/vehicles_api.dart';
+import 'features/vehicles/data/vehicles_repository.dart';
+import 'features/vehicles/presentation/vehicles_screen.dart';
 
 void main() => runApp(const LeivaApp());
 
@@ -23,10 +32,20 @@ abstract final class AppColors {
 }
 
 class LeivaApp extends StatefulWidget {
-  const LeivaApp({super.key, this.authController, this.roomsGateway});
+  const LeivaApp({
+    super.key,
+    this.authController,
+    this.roomsGateway,
+    this.vehiclesGateway,
+    this.parkingGateway,
+    this.expensesGateway,
+  });
 
   final AuthController? authController;
   final RoomsGateway? roomsGateway;
+  final VehiclesGateway? vehiclesGateway;
+  final ParkingGateway? parkingGateway;
+  final ExpensesGateway? expensesGateway;
 
   @override
   State<LeivaApp> createState() => _LeivaAppState();
@@ -36,6 +55,9 @@ class _LeivaAppState extends State<LeivaApp> {
   late final AuthController _authController;
   late final bool _ownsAuthController;
   RoomsGateway? _roomsGateway;
+  VehiclesGateway? _vehiclesGateway;
+  ParkingGateway? _parkingGateway;
+  ExpensesGateway? _expensesGateway;
 
   @override
   void initState() {
@@ -48,9 +70,15 @@ class _LeivaAppState extends State<LeivaApp> {
         AuthRepository(AuthApi(client.dio), sessionStore),
       );
       _roomsGateway = RoomsRepository(RoomsApi(client.dio));
+      _vehiclesGateway = VehiclesRepository(VehiclesApi(client.dio));
+      _parkingGateway = ParkingRepository(ParkingApi(client.dio));
+      _expensesGateway = ExpensesRepository(ExpensesApi(client.dio));
     } else {
       _authController = widget.authController!;
       _roomsGateway = widget.roomsGateway;
+      _vehiclesGateway = widget.vehiclesGateway;
+      _parkingGateway = widget.parkingGateway;
+      _expensesGateway = widget.expensesGateway;
     }
     _authController.initialize();
   }
@@ -102,6 +130,9 @@ class _LeivaAppState extends State<LeivaApp> {
           AuthStatus.authenticated => HomeScreen(
             authController: _authController,
             roomsGateway: _roomsGateway,
+            vehiclesGateway: _vehiclesGateway,
+            parkingGateway: _parkingGateway,
+            expensesGateway: _expensesGateway,
           ),
           _ => LoginScreen(authController: _authController),
         },
@@ -578,11 +609,17 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({
     required this.authController,
     required this.roomsGateway,
+    required this.vehiclesGateway,
+    required this.parkingGateway,
+    required this.expensesGateway,
     super.key,
   });
 
   final AuthController authController;
   final RoomsGateway? roomsGateway;
+  final VehiclesGateway? vehiclesGateway;
+  final ParkingGateway? parkingGateway;
+  final ExpensesGateway? expensesGateway;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -689,6 +726,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   displayName: _displayName,
                   capabilities: widget.authController.session!.capabilities,
                   roomsGateway: widget.roomsGateway,
+                  vehiclesGateway: widget.vehiclesGateway,
+                  parkingGateway: widget.parkingGateway,
+                  expensesGateway: widget.expensesGateway,
                 ),
               ),
             ],
@@ -751,22 +791,50 @@ class _DashboardContent extends StatelessWidget {
     required this.displayName,
     required this.capabilities,
     required this.roomsGateway,
+    required this.vehiclesGateway,
+    required this.parkingGateway,
+    required this.expensesGateway,
   });
 
   final String displayName;
   final AppCapabilities capabilities;
   final RoomsGateway? roomsGateway;
+  final VehiclesGateway? vehiclesGateway;
+  final ParkingGateway? parkingGateway;
+  final ExpensesGateway? expensesGateway;
 
   @override
   Widget build(BuildContext context) {
     final roomsEnabled =
         capabilities.allows('room_reservations', 'view') &&
         roomsGateway != null;
+    final vehiclesEnabled =
+        capabilities.allows('vehicle_reservations', 'view') &&
+        vehiclesGateway != null;
+    final parkingEnabled =
+        capabilities.allows('parking_requests', 'view') &&
+        parkingGateway != null;
+    final expensesEnabled =
+        capabilities.allows('my_expenses', 'view') && expensesGateway != null;
     final modules = [
-      const _ModuleData(
+      _ModuleData(
         'Reservas de vehículos',
         Icons.directions_car_outlined,
-        Color(0xFF2563EB),
+        const Color(0xFF2563EB),
+        enabled: vehiclesEnabled,
+        onTap: vehiclesEnabled
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => VehiclesScreen(
+                    gateway: vehiclesGateway!,
+                    canCreate: capabilities.allows(
+                      'vehicle_reservations',
+                      'create',
+                    ),
+                  ),
+                ),
+              )
+            : null,
       ),
       _ModuleData(
         'Salas',
@@ -787,15 +855,40 @@ class _DashboardContent extends StatelessWidget {
               )
             : null,
       ),
-      const _ModuleData(
+      _ModuleData(
         'Estacionamiento',
         Icons.local_parking_outlined,
-        Color(0xFF059669),
+        const Color(0xFF059669),
+        enabled: parkingEnabled,
+        onTap: parkingEnabled
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ParkingScreen(
+                    gateway: parkingGateway!,
+                    canCreate: capabilities.allows(
+                      'parking_requests',
+                      'create',
+                    ),
+                  ),
+                ),
+              )
+            : null,
       ),
-      const _ModuleData(
+      _ModuleData(
         'Mis gastos',
         Icons.receipt_long_outlined,
-        Color(0xFFEA580C),
+        const Color(0xFFEA580C),
+        enabled: expensesEnabled,
+        onTap: expensesEnabled
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ExpensesScreen(
+                    gateway: expensesGateway!,
+                    canUpload: capabilities.allows('my_expenses', 'upload'),
+                  ),
+                ),
+              )
+            : null,
       ),
     ];
     return SingleChildScrollView(

@@ -2,27 +2,27 @@
 
 ## Verificación vigente de la API móvil
 
-El 18/09/2026 se verificó nuevamente `origin/WSL-DEV` en
-`88e817b743fd4a1a17a016016c6d658dd5980fd2`. Este corte incorpora el router
-móvil de reservas de salas, su migración de idempotencia y sus pruebas. El
-servidor habilita `room_reservations.view/create` según el usuario y conserva
-vehículos, estacionamiento y gastos deshabilitados.
+El 19/09/2026 se verificó nuevamente `origin/WSL-DEV` en
+`7c961d677bc7de41b769aed728006aa1f8f63c77`. Este corte incorpora los routers
+móviles de salas, vehículos, dársenas y Mis Gastos. Las capacidades se calculan
+por usuario y controlan por separado lectura, alta, carga de comprobantes,
+viáticos y adelantos.
 
-Las rutas de salas también fueron verificadas en Stage sobre
+Las rutas de los cuatro módulos fueron verificadas en Stage sobre
 `https://monitor.leivahnos.com.ar/api/app/v1`: sin sesión responden `401`
 JSON, lo que confirma que están publicadas sin exponer datos anónimos.
 
-Revisión estática realizada el 18/09/2026 sobre el código publicado en GitHub.
+Revisión estática realizada el 19/09/2026 sobre el código publicado en GitHub.
 
 | Dato | Referencia verificada |
 |---|---|
 | Repositorio canónico | `git@github.com:sistemas-leivahnos/WSL-Capital-Inversiones.git` |
 | Rama | `WSL-DEV` |
-| Commit remoto vigente | `88e817b743fd4a1a17a016016c6d658dd5980fd2` |
+| Commit remoto vigente | `7c961d677bc7de41b769aed728006aa1f8f63c77` |
 | Checkout de origen | `/opt/stacks/capital-inversiones-stage/capital-inversiones` |
 | Rama de la app Flutter | `DEV` de `gmedinaleiva/Leiva-App-Interna` |
 
-La consulta remota con `git ls-remote` confirmó que `origin/WSL-DEV` apunta al commit indicado. `master` pertenece a una línea anterior y no representa Capital Inversiones Stage. El relevamiento funcional amplio que sigue se originó en `da5ccd7`; la verificación puntual del módulo móvil de salas fue realizada sobre `88e817b`.
+La consulta remota con `git ls-remote` confirmó que `origin/WSL-DEV` apunta al commit indicado. `master` pertenece a una línea anterior y no representa Capital Inversiones Stage. El relevamiento funcional amplio que sigue se originó en `da5ccd7`; la verificación de los módulos móviles fue realizada sobre `7c961d6`.
 
 La revisión previa del repositorio `gmedinaleiva/capital-inversiones` en `7ee9fcae3d51c960aaab88a6a797db9a8c69afe0` queda reemplazada por este documento. Sus conclusiones sobre estética, autenticación, módulos y APIs no deben usarse para desarrollar la aplicación Flutter.
 

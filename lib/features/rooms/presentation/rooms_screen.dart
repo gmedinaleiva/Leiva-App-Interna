@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/network/api_error.dart';
+import '../../../core/security/idempotency_key.dart';
 import '../data/rooms_repository.dart';
 import '../domain/room_models.dart';
 
@@ -204,6 +205,7 @@ class CreateRoomReservationScreen extends StatefulWidget {
 
 class _CreateRoomReservationScreenState
     extends State<CreateRoomReservationScreen> {
+  final _idempotencyKey = newIdempotencyKey();
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _notesController = TextEditingController();
@@ -301,6 +303,7 @@ class _CreateRoomReservationScreenState
     try {
       await widget.gateway.create(
         RoomReservationDraft(
+          idempotencyKey: _idempotencyKey,
           roomId: _roomId!,
           title: _titleController.text.trim(),
           notes: _notesController.text.trim().isEmpty

@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:dio/dio.dart';
 
 import '../../../core/network/api_response.dart';
@@ -74,7 +72,7 @@ class RoomsApi {
       },
       options: Options(
         contentType: Headers.jsonContentType,
-        headers: {'Idempotency-Key': _secureKey()},
+        headers: {'Idempotency-Key': draft.idempotencyKey},
       ),
     );
     return RoomReservation.fromJson(apiData(response));
@@ -95,13 +93,5 @@ class RoomsApi {
       throw const FormatException('La API devolvió una lista inesperada.');
     }
     return items.cast<Map<String, dynamic>>();
-  }
-
-  String _secureKey() {
-    final random = Random.secure();
-    return List.generate(
-      32,
-      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-    ).join();
   }
 }

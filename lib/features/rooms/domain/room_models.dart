@@ -122,6 +122,7 @@ class RoomReservation {
 
 class RoomReservationDraft {
   const RoomReservationDraft({
+    required this.idempotencyKey,
     required this.roomId,
     required this.title,
     required this.startsAt,
@@ -129,6 +130,7 @@ class RoomReservationDraft {
     this.notes,
   });
 
+  final String idempotencyKey;
   final int roomId;
   final String title;
   final String? notes;
