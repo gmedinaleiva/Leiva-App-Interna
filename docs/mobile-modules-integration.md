@@ -45,6 +45,18 @@ del backend.
 - Flutter Web muestra solamente que el piloto está disponible en la app móvil;
   no inicia autenticación ni llamadas a la API.
 
+## Alcance de perfiles
+
+La app es una herramienta de autogestión para empleados. No incorpora ABM ni
+operaciones administrativas de Flota, Guardia, Recepción, Tesorería,
+Presidencia o Sistemas.
+
+En una etapa posterior podrá admitir usuarios gerentes únicamente para
+autorizar o rechazar solicitudes. Cada autorización deberá llegar mediante una
+capacidad móvil explícita de `/auth/me`, una ruta publicada en `/api/app/v1` y
+auditoría del portal. Hasta que exista ese contrato, Flutter no mostrará ni
+inferirá acciones gerenciales.
+
 ## Viajes y telemetría
 
 El viaje activo consulta `/live` cada 45 segundos únicamente mientras su
