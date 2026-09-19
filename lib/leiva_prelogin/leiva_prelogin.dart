@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Native prelogin shell. Keep this mounted around the actual login so the
@@ -169,11 +170,13 @@ double _ease(double x) {
 }
 
 Widget _canvas(Widget child) => SizedBox.expand(
-  child: ClipRect(
-    child: FittedBox(
-      fit: BoxFit.cover,
-      alignment: Alignment.center,
-      child: SizedBox(width: 720, height: 1600, child: child),
+  child: SafeArea(
+    child: ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        child: SizedBox(width: 720, height: 1600, child: child),
+      ),
     ),
   ),
 );
@@ -369,7 +372,7 @@ class _Footer extends StatelessWidget {
       child: Stack(
         children: [
           _at(
-            1490,
+            1465,
             Align(
               alignment: Alignment.centerLeft,
               child: _label('leivahnos.com.ar', 22),
@@ -380,7 +383,7 @@ class _Footer extends StatelessWidget {
           Positioned(
             key: const ValueKey('leiva-tech-badge'),
             left: x,
-            top: 1428 - 8 * math.sin(math.pi * p),
+            top: 1375 - 8 * math.sin(math.pi * p),
             width: 112,
             height: 112,
             child: Transform.rotate(

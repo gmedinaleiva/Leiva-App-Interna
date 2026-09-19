@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/security/idempotency_key.dart';
@@ -465,10 +467,13 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
           const SizedBox(height: 14),
           _TripPanel(
             title: 'Recorrido',
-            child: SizedBox(
-              height: 190,
-              width: double.infinity,
-              child: CustomPaint(painter: _TrajectoryPainter(trip.points)),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 280,
+                width: double.infinity,
+                child: _TrajectoryMap(points: trip.points, live: _isLive),
+              ),
             ),
           ),
         ],
@@ -566,57 +571,97 @@ class _TripPanel extends StatelessWidget {
   );
 }
 
-class _TrajectoryPainter extends CustomPainter {
-  const _TrajectoryPainter(this.points);
+class _TrajectoryMap extends StatelessWidget {
+  const _TrajectoryMap({required this.points, required this.live});
   final List<VehicleTripPoint> points;
+  final bool live;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFFF2F4F7),
-    );
-    final minLat = points
-        .map((p) => p.latitude)
-        .reduce((a, b) => a < b ? a : b);
-    final maxLat = points
-        .map((p) => p.latitude)
-        .reduce((a, b) => a > b ? a : b);
-    final minLng = points
-        .map((p) => p.longitude)
-        .reduce((a, b) => a < b ? a : b);
-    final maxLng = points
-        .map((p) => p.longitude)
-        .reduce((a, b) => a > b ? a : b);
-    final latSpan = (maxLat - minLat).abs() < 0.000001 ? 1.0 : maxLat - minLat;
-    final lngSpan = (maxLng - minLng).abs() < 0.000001 ? 1.0 : maxLng - minLng;
-    final path = Path();
-    for (var index = 0; index < points.length; index++) {
-      final point = points[index];
-      final x = 12 + ((point.longitude - minLng) / lngSpan) * (size.width - 24);
-      final y =
-          size.height -
-          12 -
-          ((point.latitude - minLat) / latSpan) * (size.height - 24);
-      if (index == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = const Color(0xFF2563EB)
-        ..strokeWidth = 4
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round,
+  Widget build(BuildContext context) {
+    final coordinates = points
+        .map((point) => LatLng(point.latitude, point.longitude))
+        .toList(growable: false);
+    final first = coordinates.first;
+    final last = coordinates.last;
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: first,
+        initialZoom: 15,
+        initialCameraFit: coordinates.length > 1
+            ? CameraFit.coordinates(
+                coordinates: coordinates,
+                padding: const EdgeInsets.all(34),
+                maxZoom: 17,
+              )
+            : null,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.leivahermanos.leiva_app_interna',
+          maxNativeZoom: 19,
+        ),
+        if (coordinates.length > 1)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: coordinates,
+                color: const Color(0xFF2563EB),
+                strokeWidth: 5,
+              ),
+            ],
+          ),
+        MarkerLayer(
+          markers: [
+            Marker(
+              point: first,
+              width: 38,
+              height: 38,
+              child: const _MapMarker(
+                icon: Icons.trip_origin_rounded,
+                color: Color(0xFF059669),
+              ),
+            ),
+            if (coordinates.length > 1)
+              Marker(
+                point: last,
+                width: 42,
+                height: 42,
+                child: _MapMarker(
+                  icon: live
+                      ? Icons.directions_car_rounded
+                      : Icons.location_on_rounded,
+                  color: live
+                      ? const Color(0xFFE11D25)
+                      : const Color(0xFF7C3AED),
+                ),
+              ),
+          ],
+        ),
+        const RichAttributionWidget(
+          showFlutterMapAttribution: false,
+          attributions: [TextSourceAttribution('OpenStreetMap contributors')],
+        ),
+      ],
     );
   }
+}
+
+class _MapMarker extends StatelessWidget {
+  const _MapMarker({required this.icon, required this.color});
+  final IconData icon;
+  final Color color;
 
   @override
-  bool shouldRepaint(covariant _TrajectoryPainter oldDelegate) =>
-      oldDelegate.points != points;
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      shape: BoxShape.circle,
+      border: Border.all(color: color, width: 3),
+      boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 8)],
+    ),
+    child: Icon(icon, color: color, size: 22),
+  );
 }
 
 String _humanize(String value) => value.replaceAll('_', ' ');

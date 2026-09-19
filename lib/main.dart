@@ -395,17 +395,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   )
-                : SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                      ),
-                      child: IntrinsicHeight(
-                        child: Column(
-                          children: [
-                            _mobileHero(),
-                            Expanded(child: form),
-                          ],
+                : SafeArea(
+                    child: SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight:
+                              constraints.maxHeight -
+                              MediaQuery.viewPaddingOf(context).vertical,
+                        ),
+                        child: IntrinsicHeight(
+                          child: Column(
+                            children: [
+                              _mobileHero(),
+                              Expanded(child: form),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -418,12 +422,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _mobileHero() => Container(
     width: double.infinity,
-    padding: EdgeInsets.fromLTRB(
-      26,
-      MediaQuery.paddingOf(context).top + 22,
-      26,
-      24,
-    ),
+    padding: const EdgeInsets.fromLTRB(26, 22, 26, 24),
     decoration: const BoxDecoration(
       gradient: LinearGradient(colors: [Color(0xFFE11D25), Color(0xFFC70F19)]),
     ),
@@ -570,7 +569,7 @@ class _LoginForm extends StatelessWidget {
         mobile ? 26 : 42,
         mobile ? 30 : 42,
         mobile ? 26 : 42,
-        mobile ? MediaQuery.viewPaddingOf(context).bottom + 92 : 42,
+        mobile ? 92 : 42,
       ),
       color: Colors.white,
       child: Center(
@@ -823,12 +822,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               Expanded(
                 child: _DashboardContent(
+                  selectedIndex: _selectedIndex,
                   displayName: _displayName,
                   capabilities: widget.authController.session!.capabilities,
                   roomsGateway: widget.roomsGateway,
                   vehiclesGateway: widget.vehiclesGateway,
                   parkingGateway: widget.parkingGateway,
                   expensesGateway: widget.expensesGateway,
+                  onLogout: widget.authController.logout,
                 ),
               ),
             ],
@@ -888,20 +889,24 @@ class _DesktopNavigation extends StatelessWidget {
 
 class _DashboardContent extends StatelessWidget {
   const _DashboardContent({
+    required this.selectedIndex,
     required this.displayName,
     required this.capabilities,
     required this.roomsGateway,
     required this.vehiclesGateway,
     required this.parkingGateway,
     required this.expensesGateway,
+    required this.onLogout,
   });
 
+  final int selectedIndex;
   final String displayName;
   final AppCapabilities capabilities;
   final RoomsGateway? roomsGateway;
   final VehiclesGateway? vehiclesGateway;
   final ParkingGateway? parkingGateway;
   final ExpensesGateway? expensesGateway;
+  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -950,6 +955,11 @@ class _DashboardContent extends StatelessWidget {
                       'room_reservations',
                       'create',
                     ),
+                    parkingGateway: parkingEnabled ? parkingGateway : null,
+                    canCreateParking: capabilities.allows(
+                      'parking_requests',
+                      'create',
+                    ),
                   ),
                 ),
               )
@@ -991,6 +1001,49 @@ class _DashboardContent extends StatelessWidget {
             : null,
       ),
     ];
+    if (selectedIndex == 1) {
+      return _SimplePage(
+        title: 'Módulos',
+        subtitle: 'Herramientas habilitadas para tu cuenta.',
+        child: _ModulesGrid(modules: modules),
+      );
+    }
+    if (selectedIndex == 2) {
+      return _SimplePage(
+        title: 'Gestiones',
+        subtitle: 'Iniciá o consultá una gestión desde su módulo.',
+        child: Column(
+          children: modules
+              .where((module) => module.enabled)
+              .map(
+                (module) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _ModuleCard(
+                    title: module.$1,
+                    subtitle: 'Abrir gestiones',
+                    icon: module.$2,
+                    color: module.$3,
+                    enabled: true,
+                    onTap: module.onTap,
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+    if (selectedIndex == 3) {
+      return _SimplePage(
+        title: 'Mi perfil',
+        subtitle: 'Tu acceso se valida en tiempo real contra el portal Leiva.',
+        child: _ProfileCard(
+          displayName: displayName,
+          enabledModules: modules.where((module) => module.enabled).length,
+          totalModules: modules.length,
+          onLogout: onLogout,
+        ),
+      );
+    }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Center(
@@ -1070,38 +1123,7 @@ class _DashboardContent extends StatelessWidget {
               const SizedBox(height: 30),
               const _SectionTitle('Mis accesos'),
               const SizedBox(height: 14),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 900
-                      ? 3
-                      : constraints.maxWidth >= 540
-                      ? 2
-                      : 1;
-                  final width =
-                      (constraints.maxWidth - (columns - 1) * 14) / columns;
-                  return Wrap(
-                    spacing: 14,
-                    runSpacing: 14,
-                    children: modules
-                        .map(
-                          (module) => SizedBox(
-                            width: width,
-                            child: _ModuleCard(
-                              title: module.$1,
-                              subtitle: module.enabled
-                                  ? 'Disponible'
-                                  : 'Próximamente',
-                              icon: module.$2,
-                              color: module.$3,
-                              enabled: module.enabled,
-                              onTap: module.onTap,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  );
-                },
-              ),
+              _ModulesGrid(modules: modules),
               const SizedBox(height: 30),
               const _SectionTitle('Estado del piloto'),
               const SizedBox(height: 14),
@@ -1112,6 +1134,143 @@ class _DashboardContent extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SimplePage extends StatelessWidget {
+  const _SimplePage({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: const EdgeInsets.all(24),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(subtitle, style: const TextStyle(color: AppColors.muted)),
+            const SizedBox(height: 24),
+            child,
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _ModulesGrid extends StatelessWidget {
+  const _ModulesGrid({required this.modules});
+  final List<_ModuleData> modules;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final columns = constraints.maxWidth >= 900
+          ? 3
+          : constraints.maxWidth >= 540
+          ? 2
+          : 1;
+      final width = (constraints.maxWidth - (columns - 1) * 14) / columns;
+      return Wrap(
+        spacing: 14,
+        runSpacing: 14,
+        children: modules
+            .map(
+              (module) => SizedBox(
+                width: width,
+                child: _ModuleCard(
+                  title: module.$1,
+                  subtitle: module.enabled ? 'Disponible' : 'Sin permiso',
+                  icon: module.$2,
+                  color: module.$3,
+                  enabled: module.enabled,
+                  onTap: module.onTap,
+                ),
+              ),
+            )
+            .toList(),
+      );
+    },
+  );
+}
+
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({
+    required this.displayName,
+    required this.enabledModules,
+    required this.totalModules,
+    required this.onLogout,
+  });
+  final String displayName;
+  final int enabledModules;
+  final int totalModules;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE8ECF1)),
+        ),
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 34,
+              backgroundColor: const Color(0xFFFFE4E6),
+              child: Text(
+                displayName.characters.first.toUpperCase(),
+                style: const TextStyle(
+                  color: AppColors.red,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              displayName,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '$enabledModules de $totalModules módulos habilitados',
+              style: const TextStyle(color: AppColors.muted),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onLogout,
+          icon: const Icon(Icons.logout_rounded),
+          label: const Text('Cerrar sesión'),
+        ),
+      ),
+    ],
+  );
 }
 
 class _SectionTitle extends StatelessWidget {
@@ -1246,19 +1405,19 @@ class _PendingCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Autenticación conectada',
+                'Conectado al portal',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               SizedBox(height: 4),
               Text(
-                'Los módulos se habilitarán después de sus pruebas de autorización.',
+                'Cada módulo y acción se habilita según los permisos vigentes de tu cuenta.',
                 style: TextStyle(color: AppColors.muted, fontSize: 13),
               ),
             ],
           ),
         ),
         Chip(
-          label: Text('Piloto'),
+          label: Text('Seguro'),
           backgroundColor: Color(0xFFEFF6FF),
           side: BorderSide.none,
         ),

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/security/idempotency_key.dart';
+import '../../parking/data/parking_repository.dart';
+import '../../parking/presentation/parking_screen.dart';
 import '../data/rooms_repository.dart';
 import '../domain/room_models.dart';
 
@@ -10,11 +12,15 @@ class RoomsScreen extends StatefulWidget {
   const RoomsScreen({
     required this.gateway,
     required this.canCreate,
+    this.parkingGateway,
+    this.canCreateParking = false,
     super.key,
   });
 
   final RoomsGateway gateway;
   final bool canCreate;
+  final ParkingGateway? parkingGateway;
+  final bool canCreateParking;
 
   @override
   State<RoomsScreen> createState() => _RoomsScreenState();
@@ -118,6 +124,8 @@ class _RoomsScreenState extends State<RoomsScreen> {
         builder: (_) => RoomReservationDetailScreen(
           gateway: widget.gateway,
           reservationId: reservation.id,
+          parkingGateway: widget.parkingGateway,
+          canCreateParking: widget.canCreateParking,
         ),
       ),
     );
@@ -205,11 +213,15 @@ class RoomReservationDetailScreen extends StatefulWidget {
   const RoomReservationDetailScreen({
     required this.gateway,
     required this.reservationId,
+    this.parkingGateway,
+    this.canCreateParking = false,
     super.key,
   });
 
   final RoomsGateway gateway;
   final int reservationId;
+  final ParkingGateway? parkingGateway;
+  final bool canCreateParking;
 
   @override
   State<RoomReservationDetailScreen> createState() =>
@@ -251,6 +263,17 @@ class _RoomReservationDetailScreenState
       ),
     );
     if (created == true) await _load();
+  }
+
+  void _openParking() {
+    final gateway = widget.parkingGateway;
+    if (gateway == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ParkingScreen(gateway: gateway, canCreate: widget.canCreateParking),
+      ),
+    );
   }
 
   @override
@@ -340,6 +363,14 @@ class _RoomReservationDetailScreenState
                   onPressed: _visitorParking,
                   icon: const Icon(Icons.local_parking_outlined),
                   label: const Text('Solicitar dársena para visitante'),
+                ),
+              ],
+              if (widget.parkingGateway != null) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _openParking,
+                  icon: const Icon(Icons.directions_car_outlined),
+                  label: const Text('Ver mis dársenas'),
                 ),
               ],
             ],
@@ -456,6 +487,25 @@ class _VisitorParkingScreenState extends State<VisitorParkingScreen> {
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.link_rounded, color: Color(0xFF059669)),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'La dársena queda vinculada a la sala, al visitante y al horario de la reunión.',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
                 DropdownButtonFormField<String>(
                   initialValue: _vehicleType,
                   decoration: const InputDecoration(
@@ -479,6 +529,22 @@ class _VisitorParkingScreenState extends State<VisitorParkingScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
+                if (_options != null && visitors.isEmpty)
+                  const _MessageCard(
+                    icon: Icons.person_off_outlined,
+                    title: 'No hay visitantes pendientes',
+                    message: 'Todos los visitantes ya tienen una solicitud activa o la reserva no tiene participantes externos.',
+                  ),
+                if (_options != null && bays.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  const _MessageCard(
+                    icon: Icons.local_parking_outlined,
+                    title: 'No hay dársenas disponibles',
+                    message: 'Probá otro tipo de vehículo o consultá nuevamente más tarde.',
+                  ),
+                ],
+                if (_options != null && (visitors.isEmpty || bays.isEmpty))
+                  const SizedBox(height: 16),
                 DropdownButtonFormField<int>(
                   initialValue: _participantId,
                   decoration: const InputDecoration(labelText: 'Visitante'),

@@ -153,6 +153,26 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Módulos').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Herramientas habilitadas para tu cuenta.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Gestiones').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Iniciá o consultá una gestión desde su módulo.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Perfil').last);
+    await tester.pumpAndSettle();
+    expect(find.text('4 de 4 módulos habilitados'), findsOneWidget);
+
+    await tester.tap(find.text('Inicio').last);
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Mis gastos'));
     await tester.tap(find.text('Mis gastos'));
     await tester.pumpAndSettle();
