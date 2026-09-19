@@ -2,8 +2,8 @@
 
 ## Verificación vigente de la API móvil
 
-El 19/09/2026 se verificó nuevamente `origin/WSL-DEV` en
-`ecba70155e6f89ed76bf50619a6148702f3e1856`. Este corte incorpora los routers
+El 19/09/2026 el anfitrión publicó como corte funcional de referencia
+`619e3f8` en `WSL-DEV`. Este corte incorpora los routers
 móviles de salas, vehículos, dársenas y Mis Gastos. Las capacidades se calculan
 por usuario y controlan por separado lectura, alta, carga de comprobantes,
 viáticos y adelantos.
@@ -18,11 +18,15 @@ Revisión estática realizada el 19/09/2026 sobre el código publicado en GitHub
 |---|---|
 | Repositorio canónico | `git@github.com:sistemas-leivahnos/WSL-Capital-Inversiones.git` |
 | Rama | `WSL-DEV` |
-| Commit remoto vigente | `ecba70155e6f89ed76bf50619a6148702f3e1856` |
+| Commit funcional de referencia | `619e3f8` |
+| Contrato móvil | `0.5.0-pilot`, 42 rutas |
+| Canal documental | rama `AGENTS`, invitado publicado en `624710a` |
 | Checkout de origen | `/opt/stacks/capital-inversiones-stage/capital-inversiones` |
 | Rama de la app Flutter | `DEV` de `gmedinaleiva/Leiva-App-Interna` |
 
-La consulta remota con `git ls-remote` confirmó que `origin/WSL-DEV` apunta al commit indicado. `master` pertenece a una línea anterior y no representa Capital Inversiones Stage. El relevamiento funcional amplio que sigue se originó en `da5ccd7`; la verificación de paridad móvil fue realizada sobre `ecba701`.
+`master` pertenece a una línea anterior y no representa Capital Inversiones
+Stage. La fuente vigente para Flutter es el contrato `0.5.0-pilot` publicado
+por el anfitrión y la matriz de paridad del canal `AGENTS`.
 
 La revisión previa del repositorio `gmedinaleiva/capital-inversiones` en `7ee9fcae3d51c960aaab88a6a797db9a8c69afe0` queda reemplazada por este documento. Sus conclusiones sobre estética, autenticación, módulos y APIs no deben usarse para desarrollar la aplicación Flutter.
 
@@ -56,7 +60,10 @@ El sistema también contempla preferencias de tema `system`, `light`, `dark`, `d
 - El perfil permite cambiar contraseña y preferencias visuales. La política exige ocho caracteres, una mayúscula, un número y un carácter especial.
 - El acceso se controla mediante rol, permisos específicos y dependencias por módulo. Los simuladores financieros, Garantías, FAL, Proveedores, Subproductos, GeoSat, ESCO e Interbanking tienen controles dedicados.
 
-No debe asumirse que existe JWT ni una API móvil de autenticación. Para Android hay que definir cómo se conservará y renovará la sesión. Para Flutter web se debe confirmar el origen de despliegue y la política de cookies/CORS. Estas decisiones requieren validar el contrato real del entorno Stage antes de implementar el cliente.
+La API móvil usa una sesión opaca independiente de la sesión web, mediante la
+cookie segura `__Host-leiva_app_session` y un token CSRF para mutaciones. El
+cliente Android conserva ambos en almacenamiento seguro. El piloto no habilita
+Flutter Web ni CORS.
 
 ## Módulos observados
 

@@ -932,6 +932,7 @@ class _DashboardContent extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => VehiclesScreen(
                     gateway: vehiclesGateway!,
+                    parkingGateway: parkingEnabled ? parkingGateway : null,
                     canCreate: capabilities.allows(
                       'vehicle_reservations',
                       'create',

@@ -7,6 +7,7 @@ abstract interface class VehiclesGateway {
     required DateTime to,
   });
   Future<List<VehicleReservation>> reservations();
+  Future<VehicleReservation> reservation(int reservationId);
   Future<VehicleReservation> create(VehicleReservationDraft draft);
   Future<VehicleReservation> action(
     int reservationId,
@@ -18,8 +19,13 @@ abstract interface class VehiclesGateway {
     DateTime endsAt, {
     String? notes,
   });
+  Future<VehicleReturnParking> createReturnParking(
+    int reservationId,
+    VehicleReturnParkingDraft draft,
+  );
   Future<VehicleTripView> trip(int reservationId, {required bool live});
   Future<List<VehicleNotice>> notices({int? reservationId});
+  Future<VehicleNotice> notice(int noticeId);
 }
 
 class VehiclesRepository implements VehiclesGateway {
@@ -34,6 +40,10 @@ class VehiclesRepository implements VehiclesGateway {
 
   @override
   Future<List<VehicleReservation>> reservations() => _api.reservations();
+
+  @override
+  Future<VehicleReservation> reservation(int reservationId) =>
+      _api.reservation(reservationId);
 
   @override
   Future<VehicleReservation> create(VehicleReservationDraft draft) =>
@@ -54,10 +64,19 @@ class VehiclesRepository implements VehiclesGateway {
   }) => _api.extend(reservationId, endsAt, notes: notes);
 
   @override
+  Future<VehicleReturnParking> createReturnParking(
+    int reservationId,
+    VehicleReturnParkingDraft draft,
+  ) => _api.createReturnParking(reservationId, draft);
+
+  @override
   Future<VehicleTripView> trip(int reservationId, {required bool live}) =>
       _api.trip(reservationId, live: live);
 
   @override
   Future<List<VehicleNotice>> notices({int? reservationId}) =>
       _api.notices(reservationId: reservationId);
+
+  @override
+  Future<VehicleNotice> notice(int noticeId) => _api.notice(noticeId);
 }

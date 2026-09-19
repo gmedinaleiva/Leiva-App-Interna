@@ -7,6 +7,8 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/security/idempotency_key.dart';
+import '../../parking/data/parking_repository.dart';
+import '../../parking/domain/parking_models.dart';
 import '../data/vehicles_repository.dart';
 import '../domain/vehicle_models.dart';
 
@@ -14,10 +16,12 @@ class VehiclesScreen extends StatefulWidget {
   const VehiclesScreen({
     required this.gateway,
     required this.canCreate,
+    this.parkingGateway,
     super.key,
   });
   final VehiclesGateway gateway;
   final bool canCreate;
+  final ParkingGateway? parkingGateway;
 
   @override
   State<VehiclesScreen> createState() => _VehiclesScreenState();
@@ -59,7 +63,10 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => CreateVehicleReservationScreen(gateway: widget.gateway),
+        builder: (_) => CreateVehicleReservationScreen(
+          gateway: widget.gateway,
+          parkingGateway: widget.parkingGateway,
+        ),
       ),
     );
     if (created == true) await _load();
@@ -217,6 +224,7 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
                   builder: (_) => VehicleTripScreen(
                     gateway: widget.gateway,
                     reservation: row,
+                    parkingGateway: widget.parkingGateway,
                   ),
                 ),
               ),
@@ -302,11 +310,13 @@ class VehicleTripScreen extends StatefulWidget {
   const VehicleTripScreen({
     required this.gateway,
     required this.reservation,
+    this.parkingGateway,
     super.key,
   });
 
   final VehiclesGateway gateway;
   final VehicleReservation reservation;
+  final ParkingGateway? parkingGateway;
 
   @override
   State<VehicleTripScreen> createState() => _VehicleTripScreenState();
@@ -317,14 +327,16 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
   Timer? _timer;
   VehicleTripView? _trip;
   List<VehicleNotice> _notices = const [];
+  late VehicleReservation _reservation;
   String? _error;
   bool _loading = true;
 
-  bool get _isLive => widget.reservation.status.toLowerCase() == 'en_uso';
+  bool get _isLive => _reservation.status.toLowerCase() == 'en_uso';
 
   @override
   void initState() {
     super.initState();
+    _reservation = widget.reservation;
     WidgetsBinding.instance.addObserver(this);
     _load();
     _startPolling();
@@ -365,17 +377,23 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
       });
     }
     try {
+      final reservation = await widget.gateway.reservation(
+        widget.reservation.id,
+      );
+      final live = reservation.status.toLowerCase() == 'en_uso';
       final result = await Future.wait<dynamic>([
-        widget.gateway.trip(widget.reservation.id, live: _isLive),
+        widget.gateway.trip(widget.reservation.id, live: live),
         widget.gateway.notices(reservationId: widget.reservation.id),
       ]);
       if (!mounted) return;
       setState(() {
+        _reservation = reservation;
         _trip = result[0] as VehicleTripView;
         _notices = result[1] as List<VehicleNotice>;
         _loading = false;
         _error = null;
       });
+      _startPolling();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -386,7 +404,7 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
   }
 
   Future<void> _extend() async {
-    var selected = widget.reservation.endsAt.add(const Duration(hours: 1));
+    var selected = _reservation.endsAt.add(const Duration(hours: 1));
     final date = await showDatePicker(
       context: context,
       initialDate: selected,
@@ -419,10 +437,37 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
     }
   }
 
+  Future<void> _requestReturnParking() async {
+    final parkingGateway = widget.parkingGateway;
+    if (parkingGateway == null) return;
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => VehicleReturnParkingScreen(
+          gateway: widget.gateway,
+          parkingGateway: parkingGateway,
+          reservation: _reservation,
+        ),
+      ),
+    );
+    if (created == true) await _load();
+  }
+
+  Future<void> _openNotice(VehicleNotice notice) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => VehicleNoticeDetailScreen(
+          gateway: widget.gateway,
+          noticeId: notice.id,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(widget.reservation.vehicle?.label ?? 'Detalle del viaje'),
+      title: Text(_reservation.vehicle?.label ?? 'Detalle del viaje'),
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
       actions: [
@@ -449,6 +494,52 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
             label: const Text('Extender viaje'),
           ),
         if (_isLive) const SizedBox(height: 14),
+        _TripPanel(
+          title: 'Datos del viaje',
+          child: Column(
+            children: [
+              _DetailRow(
+                label: 'Estado',
+                value: _statusLabel(_reservation.status),
+              ),
+              _DetailRow(
+                label: 'Destino',
+                value: _reservation.destination ?? 'No informado',
+              ),
+              _DetailRow(
+                label: 'Distancia planificada',
+                value: _reservation.plannedDistanceKm == null
+                    ? 'No informada'
+                    : '${_number(_reservation.plannedDistanceKm!)} km',
+              ),
+              _DetailRow(
+                label: 'Ocupantes',
+                value:
+                    _reservation.occupantCount?.toString() ?? 'No informados',
+              ),
+              _DetailRow(
+                label: 'Equipaje estimado',
+                value: _reservation.estimatedLuggageKg == null
+                    ? 'No informado'
+                    : '${_number(_reservation.estimatedLuggageKg!)} kg',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _ReturnParkingPanel(
+          parking: _reservation.returnParking,
+          canRequest:
+              widget.parkingGateway != null &&
+              _reservation.returnParking == null &&
+              !const {
+                'cancelada',
+                'cancelled',
+                'finalizada',
+                'finished',
+              }.contains(_reservation.status.toLowerCase()),
+          onRequest: _requestReturnParking,
+        ),
         if (live != null)
           _TripPanel(
             title: 'Última señal',
@@ -494,6 +585,10 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
             ),
           ),
         ],
+        if (trip.fuel.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _FuelPanel(fuel: trip.fuel),
+        ],
         if (_notices.isNotEmpty) ...[
           const SizedBox(height: 14),
           _TripPanel(
@@ -506,6 +601,8 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
                       leading: const Icon(Icons.gavel_outlined),
                       title: Text(notice.reason ?? 'Aviso'),
                       subtitle: Text(notice.location ?? notice.status),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => _openNotice(notice),
                     ),
                   )
                   .toList(),
@@ -569,6 +666,254 @@ class _TripPanel extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(label, style: const TextStyle(color: Color(0xFF667085))),
+        ),
+        const SizedBox(width: 16),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ReturnParkingPanel extends StatelessWidget {
+  const _ReturnParkingPanel({
+    required this.parking,
+    required this.canRequest,
+    required this.onRequest,
+  });
+
+  final VehicleReturnParking? parking;
+  final bool canRequest;
+  final VoidCallback onRequest;
+
+  @override
+  Widget build(BuildContext context) => _TripPanel(
+    title: 'Dársena de regreso',
+    child: parking == null
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Este viaje todavía no tiene una dársena de regreso.'),
+              if (canRequest) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: onRequest,
+                  icon: const Icon(Icons.local_parking_rounded),
+                  label: const Text('Solicitar dársena'),
+                ),
+              ],
+            ],
+          )
+        : Column(
+            children: [
+              _DetailRow(label: 'Estado', value: _statusLabel(parking!.status)),
+              _DetailRow(
+                label: 'Dársena',
+                value: [parking!.bay?.code, parking!.bay?.name]
+                    .whereType<String>()
+                    .where((value) => value.isNotEmpty)
+                    .join(' · '),
+              ),
+              _DetailRow(
+                label: 'Horario',
+                value: '${_dt(parking!.startsAt)} — ${_time(parking!.endsAt)}',
+              ),
+              if (parking!.resolutionNotes?.isNotEmpty == true)
+                _DetailRow(
+                  label: 'Resolución',
+                  value: parking!.resolutionNotes!,
+                ),
+            ],
+          ),
+  );
+}
+
+class _FuelPanel extends StatelessWidget {
+  const _FuelPanel({required this.fuel});
+  final Map<String, dynamic> fuel;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = fuel['enabled'] as bool? ?? false;
+    final rows = <(String, dynamic, String)>[
+      ('Nivel inicial', fuel['start_level_pct'], '%'),
+      ('Nivel final', fuel['end_level_pct'], '%'),
+      ('Consumo medido', fuel['consumed_liters'], ' L'),
+      ('Carga estimada', fuel['loaded_liters'], ' L'),
+      ('Proyección del viaje', fuel['projected_liters'], ' L'),
+      ('Distancia observada', fuel['actual_distance_km'], ' km'),
+      ('Consumo cada 100 km', fuel['actual_consumption_l_per_100km'], ' L'),
+    ].where((row) => row.$2 != null && '${row.$2}'.isNotEmpty).toList();
+    final events = fuel['events'] is List ? fuel['events'] as List : const [];
+    return _TripPanel(
+      title: 'Combustible',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            enabled
+                ? 'Origen: telemetría GeoSat Extras. Las cargas se muestran como estimaciones hasta su conciliación.'
+                : 'Esta unidad no tiene medición de combustible habilitada.',
+            style: const TextStyle(color: Color(0xFF475467)),
+          ),
+          if (enabled && rows.isEmpty) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Todavía no hay mediciones disponibles para este viaje.',
+            ),
+          ],
+          if (rows.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...rows.map(
+              (row) => _DetailRow(label: row.$1, value: '${row.$2}${row.$3}'),
+            ),
+          ],
+          if (events.isNotEmpty) ...[
+            const Divider(height: 24),
+            Text(
+              '${events.length} carga${events.length == 1 ? '' : 's'} estimada${events.length == 1 ? '' : 's'}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class VehicleNoticeDetailScreen extends StatefulWidget {
+  const VehicleNoticeDetailScreen({
+    required this.gateway,
+    required this.noticeId,
+    super.key,
+  });
+
+  final VehiclesGateway gateway;
+  final int noticeId;
+
+  @override
+  State<VehicleNoticeDetailScreen> createState() =>
+      _VehicleNoticeDetailScreenState();
+}
+
+class _VehicleNoticeDetailScreenState extends State<VehicleNoticeDetailScreen> {
+  VehicleNotice? _notice;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _error = null);
+    try {
+      final notice = await widget.gateway.notice(widget.noticeId);
+      if (!mounted) return;
+      setState(() => _notice = notice);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = _message(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Detalle de multa o aviso'),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+    ),
+    body: _error != null
+        ? _MessageList(message: _error!, onRetry: _load)
+        : _notice == null
+        ? const Center(child: CircularProgressIndicator())
+        : _body(_notice!),
+  );
+
+  Widget _body(VehicleNotice notice) {
+    final management = _readableEntries(notice.employeeManagement);
+    final evidence = _readableEntries(notice.telemetryEvidence);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _TripPanel(
+          title: notice.reason ?? 'Multa o aviso',
+          child: Column(
+            children: [
+              _DetailRow(label: 'Estado', value: _statusLabel(notice.status)),
+              if (notice.noticeNumber != null)
+                _DetailRow(label: 'Número', value: notice.noticeNumber!),
+              if (notice.vehicleLabel != null)
+                _DetailRow(label: 'Vehículo', value: notice.vehicleLabel!),
+              if (notice.authority != null)
+                _DetailRow(label: 'Autoridad', value: notice.authority!),
+              if (notice.location != null)
+                _DetailRow(label: 'Lugar', value: notice.location!),
+              if (notice.infractionAt != null)
+                _DetailRow(label: 'Fecha', value: _dt(notice.infractionAt!)),
+              if (notice.amount != null)
+                _DetailRow(
+                  label: 'Importe',
+                  value:
+                      '${notice.currency ?? 'ARS'} ${_number(notice.amount!)}',
+                ),
+              if (notice.dueDate != null)
+                _DetailRow(label: 'Vencimiento', value: _date(notice.dueDate!)),
+            ],
+          ),
+        ),
+        if (management.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          _TripPanel(
+            title: 'Definición del portal',
+            child: Column(
+              children: management
+                  .map((row) => _DetailRow(label: row.$1, value: row.$2))
+                  .toList(),
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        _TripPanel(
+          title: 'Evidencia GeoSat',
+          child: evidence.isEmpty
+              ? const Text('No hay evidencia disponible para este aviso.')
+              : Column(
+                  children: evidence
+                      .map((row) => _DetailRow(label: row.$1, value: row.$2))
+                      .toList(),
+                ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'La app muestra la definición registrada en el portal. Las decisiones administrativas se realizan fuera de la app.',
+          style: TextStyle(color: Color(0xFF667085), fontSize: 12),
+        ),
+      ],
+    );
+  }
 }
 
 class _TrajectoryMap extends StatelessWidget {
@@ -666,9 +1011,238 @@ class _MapMarker extends StatelessWidget {
 
 String _humanize(String value) => value.replaceAll('_', ' ');
 
-class CreateVehicleReservationScreen extends StatefulWidget {
-  const CreateVehicleReservationScreen({required this.gateway, super.key});
+class VehicleReturnParkingScreen extends StatefulWidget {
+  const VehicleReturnParkingScreen({
+    required this.gateway,
+    required this.parkingGateway,
+    required this.reservation,
+    super.key,
+  });
+
   final VehiclesGateway gateway;
+  final ParkingGateway parkingGateway;
+  final VehicleReservation reservation;
+
+  @override
+  State<VehicleReturnParkingScreen> createState() =>
+      _VehicleReturnParkingScreenState();
+}
+
+class _VehicleReturnParkingScreenState
+    extends State<VehicleReturnParkingScreen> {
+  final _idempotencyKey = newIdempotencyKey();
+  List<ParkingBranch> _branches = const [];
+  List<ParkingBay> _bays = const [];
+  int? _branchId;
+  int? _bayId;
+  int _minutes = 60;
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBranches();
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final branches = await widget.parkingGateway.branches();
+      if (!mounted) return;
+      final expected =
+          widget.reservation.expectedReturnBranchId ??
+          widget.reservation.originBranchId;
+      final selected = branches.any((branch) => branch.id == expected)
+          ? expected
+          : branches.firstOrNull?.id;
+      setState(() {
+        _branches = branches;
+        _branchId = selected;
+      });
+      await _loadBays();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = _message(error);
+      });
+    }
+  }
+
+  Future<void> _loadBays() async {
+    final branchId = _branchId;
+    if (branchId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+      _bayId = null;
+    });
+    try {
+      final bays = await widget.parkingGateway.bays(
+        branchId: branchId,
+        from: widget.reservation.endsAt,
+        to: widget.reservation.endsAt.add(Duration(minutes: _minutes)),
+        vehicleType: 'auto',
+      );
+      if (!mounted) return;
+      final available = bays.where((bay) => bay.available).toList();
+      setState(() {
+        _bays = bays;
+        _bayId = available.firstOrNull?.id;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = _message(error);
+      });
+    }
+  }
+
+  Future<void> _submit() async {
+    final bayId = _bayId;
+    if (bayId == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.gateway.createReturnParking(
+        widget.reservation.id,
+        VehicleReturnParkingDraft(
+          idempotencyKey: _idempotencyKey,
+          bayId: bayId,
+          minutes: _minutes,
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _message(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final available = _bays.where((bay) => bay.available).toList();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dársena de regreso'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text(
+            'Regreso previsto: ${_dt(widget.reservation.endsAt)}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<int>(
+            initialValue: _branchId,
+            decoration: const InputDecoration(labelText: 'Sucursal de regreso'),
+            items: _branches
+                .map(
+                  (branch) => DropdownMenuItem(
+                    value: branch.id,
+                    child: Text(branch.name),
+                  ),
+                )
+                .toList(),
+            onChanged: _loading
+                ? null
+                : (value) {
+                    setState(() => _branchId = value);
+                    _loadBays();
+                  },
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<int>(
+            initialValue: _minutes,
+            decoration: const InputDecoration(labelText: 'Tiempo reservado'),
+            items: const [30, 60, 90, 120]
+                .map(
+                  (minutes) => DropdownMenuItem(
+                    value: minutes,
+                    child: Text('$minutes minutos'),
+                  ),
+                )
+                .toList(),
+            onChanged: _loading
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    setState(() => _minutes = value);
+                    _loadBays();
+                  },
+          ),
+          const SizedBox(height: 16),
+          if (_loading)
+            const LinearProgressIndicator()
+          else
+            DropdownButtonFormField<int>(
+              key: ValueKey('return-bay-$_branchId-$_minutes'),
+              initialValue: _bayId,
+              decoration: const InputDecoration(
+                labelText: 'Dársena disponible',
+              ),
+              items: available
+                  .map(
+                    (bay) => DropdownMenuItem(
+                      value: bay.id,
+                      child: Text('${bay.code} · ${bay.name}'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => _bayId = value),
+            ),
+          if (!_loading && available.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: Text(
+                'No hay dársenas compatibles disponibles para ese regreso.',
+                style: TextStyle(color: Color(0xFFB42318)),
+              ),
+            ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+          ],
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _saving || _loading || _bayId == null ? null : _submit,
+            icon: _saving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.local_parking_rounded),
+            label: Text(_saving ? 'Enviando...' : 'Solicitar dársena'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CreateVehicleReservationScreen extends StatefulWidget {
+  const CreateVehicleReservationScreen({
+    required this.gateway,
+    this.parkingGateway,
+    super.key,
+  });
+  final VehiclesGateway gateway;
+  final ParkingGateway? parkingGateway;
 
   @override
   State<CreateVehicleReservationScreen> createState() =>
@@ -682,11 +1256,20 @@ class _CreateVehicleReservationScreenState
   final _purpose = TextEditingController();
   final _destination = TextEditingController();
   final _occupants = TextEditingController(text: '1');
+  final _distance = TextEditingController();
+  final _luggage = TextEditingController();
   final _notes = TextEditingController();
   late DateTime _from;
   late DateTime _to;
   List<VehicleOption> _vehicles = const [];
   int? _vehicleId;
+  List<ParkingBranch> _parkingBranches = const [];
+  List<ParkingBay> _returnBays = const [];
+  bool _requestReturnParking = false;
+  int? _returnBranchId;
+  int? _returnBayId;
+  int _returnMinutes = 60;
+  bool _parkingLoading = false;
   bool _checking = false;
   bool _saving = false;
   String? _error;
@@ -698,6 +1281,7 @@ class _CreateVehicleReservationScreenState
     _from = DateTime(now.year, now.month, now.day, now.hour + 1);
     _to = _from.add(const Duration(hours: 2));
     _check();
+    _loadParkingBranches();
   }
 
   @override
@@ -705,8 +1289,56 @@ class _CreateVehicleReservationScreenState
     _purpose.dispose();
     _destination.dispose();
     _occupants.dispose();
+    _distance.dispose();
+    _luggage.dispose();
     _notes.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadParkingBranches() async {
+    final gateway = widget.parkingGateway;
+    if (gateway == null) return;
+    try {
+      final branches = await gateway.branches();
+      if (!mounted) return;
+      setState(() {
+        _parkingBranches = branches;
+        _returnBranchId = branches.firstOrNull?.id;
+      });
+    } catch (_) {
+      // La reserva de vehículo sigue disponible sin la opción de dársena.
+    }
+  }
+
+  Future<void> _loadReturnBays() async {
+    final gateway = widget.parkingGateway;
+    final branchId = _returnBranchId;
+    if (gateway == null || branchId == null || !_requestReturnParking) return;
+    setState(() {
+      _parkingLoading = true;
+      _returnBayId = null;
+    });
+    try {
+      final bays = await gateway.bays(
+        branchId: branchId,
+        from: _to,
+        to: _to.add(Duration(minutes: _returnMinutes)),
+        vehicleType: 'auto',
+      );
+      if (!mounted) return;
+      final available = bays.where((bay) => bay.available).toList();
+      setState(() {
+        _returnBays = bays;
+        _returnBayId = available.firstOrNull?.id;
+        _parkingLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _parkingLoading = false;
+        _error = _message(error);
+      });
+    }
   }
 
   Future<void> _check() async {
@@ -763,6 +1395,7 @@ class _CreateVehicleReservationScreenState
       }
     });
     await _check();
+    if (_requestReturnParking) await _loadReturnBays();
   }
 
   Future<void> _submit() async {
@@ -781,7 +1414,11 @@ class _CreateVehicleReservationScreenState
           purpose: _nullable(_purpose.text),
           destination: _nullable(_destination.text),
           occupantCount: int.tryParse(_occupants.text),
+          plannedDistanceKm: _decimal(_distance.text),
+          estimatedLuggageKg: _decimal(_luggage.text),
           notes: _nullable(_notes.text),
+          returnBayId: _requestReturnParking ? _returnBayId : null,
+          returnParkingMinutes: _returnMinutes,
         ),
       );
       if (!mounted) return;
@@ -889,6 +1526,118 @@ class _CreateVehicleReservationScreenState
                   ? 'Ingresá una cantidad válida'
                   : null,
             ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _distance,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Distancia planificada (km)',
+                    ),
+                    validator: _optionalNonNegative,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _luggage,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Equipaje estimado (kg)',
+                    ),
+                    validator: _optionalNonNegative,
+                  ),
+                ),
+              ],
+            ),
+            if (widget.parkingGateway != null &&
+                _parkingBranches.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Reservar dársena de regreso'),
+                subtitle: const Text(
+                  'La solicitud quedará pendiente para el horario de regreso.',
+                ),
+                value: _requestReturnParking,
+                onChanged: (value) {
+                  setState(() => _requestReturnParking = value);
+                  if (value) _loadReturnBays();
+                },
+              ),
+              if (_requestReturnParking) ...[
+                DropdownButtonFormField<int>(
+                  initialValue: _returnBranchId,
+                  decoration: const InputDecoration(
+                    labelText: 'Sucursal de regreso',
+                  ),
+                  items: _parkingBranches
+                      .map(
+                        (branch) => DropdownMenuItem(
+                          value: branch.id,
+                          child: Text(branch.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() => _returnBranchId = value);
+                    _loadReturnBays();
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: _returnMinutes,
+                  decoration: const InputDecoration(
+                    labelText: 'Tiempo reservado',
+                  ),
+                  items: const [30, 60, 90, 120]
+                      .map(
+                        (minutes) => DropdownMenuItem(
+                          value: minutes,
+                          child: Text('$minutes minutos'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _returnMinutes = value);
+                    _loadReturnBays();
+                  },
+                ),
+                const SizedBox(height: 12),
+                if (_parkingLoading)
+                  const LinearProgressIndicator()
+                else
+                  DropdownButtonFormField<int>(
+                    key: ValueKey(
+                      'create-return-bay-$_returnBranchId-$_returnMinutes-${_to.toIso8601String()}',
+                    ),
+                    initialValue: _returnBayId,
+                    decoration: const InputDecoration(
+                      labelText: 'Dársena disponible',
+                    ),
+                    items: _returnBays
+                        .where((bay) => bay.available)
+                        .map(
+                          (bay) => DropdownMenuItem(
+                            value: bay.id,
+                            child: Text('${bay.code} · ${bay.name}'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setState(() => _returnBayId = value),
+                    validator: (value) => _requestReturnParking && value == null
+                        ? 'Seleccioná una dársena disponible'
+                        : null,
+                  ),
+              ],
+            ],
             const SizedBox(height: 16),
             TextFormField(
               controller: _notes,
@@ -1020,6 +1769,54 @@ String _message(Object error) {
 }
 
 String? _nullable(String value) => value.trim().isEmpty ? null : value.trim();
+double? _decimal(String value) =>
+    double.tryParse(value.trim().replaceAll(',', '.'));
+String? _optionalNonNegative(String? value) {
+  final text = value?.trim() ?? '';
+  if (text.isEmpty) return null;
+  final parsed = _decimal(text);
+  if (parsed == null || parsed < 0) return 'Ingresá un valor válido';
+  return null;
+}
+
+String _number(num value) {
+  final rounded = value.toStringAsFixed(2);
+  if (rounded.endsWith('.00')) return rounded.substring(0, rounded.length - 3);
+  if (rounded.endsWith('0')) return rounded.substring(0, rounded.length - 1);
+  return rounded;
+}
+
+String _date(DateTime value) =>
+    '${_two(value.day)}/${_two(value.month)}/${value.year}';
+
+List<(String, String)> _readableEntries(dynamic value, [String prefix = '']) {
+  final rows = <(String, String)>[];
+  if (value is Map) {
+    for (final entry in value.entries) {
+      if (entry.value == null || entry.value == '' || entry.value == false) {
+        continue;
+      }
+      final label = prefix.isEmpty
+          ? _humanize('${entry.key}')
+          : '$prefix · ${_humanize('${entry.key}')}';
+      if (entry.value is Map || entry.value is List) {
+        rows.addAll(_readableEntries(entry.value, label));
+      } else {
+        rows.add((label, '${entry.value}'));
+      }
+    }
+  } else if (value is List) {
+    for (var index = 0; index < value.length; index++) {
+      rows.addAll(
+        _readableEntries(value[index], '$prefix ${index + 1}'.trim()),
+      );
+    }
+  } else if (value != null) {
+    rows.add((prefix.isEmpty ? 'Detalle' : prefix, '$value'));
+  }
+  return rows;
+}
+
 String _two(int value) => value.toString().padLeft(2, '0');
 String _dt(DateTime value) =>
     '${_two(value.day)}/${_two(value.month)}/${value.year} ${_time(value)}';
@@ -1031,5 +1828,6 @@ String _statusLabel(String value) => switch (value.toLowerCase()) {
   'finalizada' || 'finished' => 'Finalizada',
   'cancelada' || 'cancelled' => 'Cancelada',
   'rechazada' || 'rejected' => 'Rechazada',
+  'requiere_revision' => 'Requiere revisión',
   _ => value,
 };

@@ -33,6 +33,13 @@ class VehiclesApi {
     return _items(data).map(VehicleReservation.fromJson).toList();
   }
 
+  Future<VehicleReservation> reservation(int reservationId) async {
+    final response = await _dio.get<dynamic>(
+      'vehicle-reservations/$reservationId',
+    );
+    return VehicleReservation.fromJson(apiData(response));
+  }
+
   Future<VehicleReservation> create(VehicleReservationDraft draft) async {
     final response = await _dio.post<dynamic>(
       'vehicle-reservations',
@@ -42,8 +49,12 @@ class VehiclesApi {
         'ends_at': draft.endsAt.toUtc().toIso8601String(),
         'purpose': draft.purpose,
         'destination': draft.destination,
+        'planned_distance_km': draft.plannedDistanceKm,
         'occupant_count': draft.occupantCount,
+        'estimated_luggage_kg': draft.estimatedLuggageKg,
         'notes': draft.notes,
+        'return_bay_id': draft.returnBayId,
+        'return_parking_minutes': draft.returnParkingMinutes,
       },
       options: Options(
         contentType: Headers.jsonContentType,
@@ -51,6 +62,24 @@ class VehiclesApi {
       ),
     );
     return VehicleReservation.fromJson(apiData(response));
+  }
+
+  Future<VehicleReturnParking> createReturnParking(
+    int reservationId,
+    VehicleReturnParkingDraft draft,
+  ) async {
+    final response = await _dio.post<dynamic>(
+      'vehicle-reservations/$reservationId/return-parking',
+      data: {'bay_id': draft.bayId, 'minutes': draft.minutes},
+      options: Options(
+        contentType: Headers.jsonContentType,
+        headers: {'Idempotency-Key': draft.idempotencyKey},
+      ),
+    );
+    final data = apiData(response);
+    return VehicleReturnParking.fromJson(
+      data['return_parking'] as Map<String, dynamic>,
+    );
   }
 
   Future<VehicleReservation> action(
@@ -99,6 +128,11 @@ class VehiclesApi {
       await _dio.get<dynamic>('vehicle-notices', queryParameters: query),
     );
     return _items(data).map(VehicleNotice.fromJson).toList();
+  }
+
+  Future<VehicleNotice> notice(int noticeId) async {
+    final response = await _dio.get<dynamic>('vehicle-notices/$noticeId');
+    return VehicleNotice.fromJson(apiData(response));
   }
 
   List<Map<String, dynamic>> _items(Map<String, dynamic> data) {

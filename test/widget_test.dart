@@ -287,6 +287,10 @@ class _FakeVehiclesGateway implements VehiclesGateway {
   Future<List<VehicleReservation>> reservations() async => const [];
 
   @override
+  Future<VehicleReservation> reservation(int reservationId) =>
+      throw UnimplementedError();
+
+  @override
   Future<VehicleReservation> action(
     int reservationId,
     String action, {
@@ -305,7 +309,16 @@ class _FakeVehiclesGateway implements VehiclesGateway {
   }) => throw UnimplementedError();
 
   @override
+  Future<VehicleReturnParking> createReturnParking(
+    int reservationId,
+    VehicleReturnParkingDraft draft,
+  ) => throw UnimplementedError();
+
+  @override
   Future<List<VehicleNotice>> notices({int? reservationId}) async => const [];
+
+  @override
+  Future<VehicleNotice> notice(int noticeId) => throw UnimplementedError();
 
   @override
   Future<VehicleTripView> trip(int reservationId, {required bool live}) =>
