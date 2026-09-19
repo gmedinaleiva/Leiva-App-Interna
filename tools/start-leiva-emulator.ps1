@@ -84,4 +84,18 @@ if (-not $appPid) {
     throw 'Android inició, pero Leiva Interna no pudo abrirse.'
 }
 
+# Android 16 puede abrir Gboard en su barra manuscrita compacta. Si la app está
+# en el login, enfocamos Usuario y usamos el atajo oficial "Mostrar teclado en
+# pantalla" para dejar el QWERTY visible. No se ejecuta dentro del dashboard.
+$uiDumpPath = '/sdcard/leiva-app-window.xml'
+& $adbPath -s $deviceId shell uiautomator dump $uiDumpPath | Out-Null
+$uiDump = (& $adbPath -s $deviceId shell cat $uiDumpPath) -join "`n"
+& $adbPath -s $deviceId shell rm $uiDumpPath
+if ($uiDump -match 'hint="nombre\.apellido"') {
+    & $adbPath -s $deviceId shell input tap 360 880
+    Start-Sleep -Seconds 1
+    & $adbPath -s $deviceId shell input keycombination 57 39
+    Start-Sleep -Seconds 1
+}
+
 Write-Host 'Leiva Interna está lista.' -ForegroundColor Green
