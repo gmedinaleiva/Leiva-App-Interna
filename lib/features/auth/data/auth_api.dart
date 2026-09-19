@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 
-import '../../../core/network/api_error.dart';
+import '../../../core/network/api_response.dart';
 import '../domain/auth_session.dart';
 
 class AuthApi {
@@ -23,24 +23,24 @@ class AuthApi {
       },
       options: Options(contentType: Headers.jsonContentType),
     );
-    return AuthSession.fromJson(_successJson(response));
+    return AuthSession.fromJson(apiSuccessJson(response));
   }
 
   Future<AuthSession> me() async {
     final response = await _dio.get<dynamic>('auth/me');
-    return AuthSession.fromJson(_successJson(response));
+    return AuthSession.fromJson(apiSuccessJson(response));
   }
 
   Future<String> rotateCsrf() async {
     final response = await _dio.get<dynamic>('auth/csrf');
-    final json = _successJson(response);
+    final json = apiSuccessJson(response);
     final data = json['data'] as Map<String, dynamic>;
     return data['csrf_token'] as String;
   }
 
   Future<void> logout() async {
     final response = await _dio.post<dynamic>('auth/logout');
-    _ensureSuccess(response);
+    ensureApiSuccess(response);
   }
 
   Future<void> logoutAll(String password) async {
@@ -49,40 +49,6 @@ class AuthApi {
       data: {'password': password},
       options: Options(contentType: Headers.jsonContentType),
     );
-    _ensureSuccess(response);
-  }
-
-  Map<String, dynamic> _successJson(Response<dynamic> response) {
-    _ensureSuccess(response);
-    final value = response.data;
-    if (value is! Map<String, dynamic>) {
-      throw const FormatException('La API devolvió una respuesta inesperada.');
-    }
-    return value;
-  }
-
-  void _ensureSuccess(Response<dynamic> response) {
-    final status = response.statusCode ?? 0;
-    if (status >= 200 && status < 300) return;
-
-    var code = 'request_failed';
-    var message = 'No se pudo completar la operación.';
-    final body = response.data;
-    if (body is Map<String, dynamic>) {
-      final error = body['error'];
-      if (error is Map<String, dynamic>) {
-        code = error['code'] as String? ?? code;
-        message = error['message'] as String? ?? message;
-      }
-    }
-    final retryAfter = int.tryParse(
-      response.headers.value('retry-after') ?? '',
-    );
-    throw ApiFailure(
-      statusCode: status,
-      code: code,
-      message: message,
-      retryAfterSeconds: retryAfter,
-    );
+    ensureApiSuccess(response);
   }
 }

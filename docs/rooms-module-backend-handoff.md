@@ -1,5 +1,10 @@
 # Leiva App Interna — siguiente corte: reservas de salas
 
+> Estado al 18/09/2026: implementado y publicado por Capital Inversiones en
+> `origin/WSL-DEV` (`88e817b743fd4a1a17a016016c6d658dd5980fd2`). Flutter
+> consume el contrato descrito abajo. Este documento se conserva como
+> trazabilidad del pedido original.
+
 ## Mensaje para el Codex de Capital Inversiones
 
 Partí de `sistemas-leivahnos/WSL-Capital-Inversiones`, rama `WSL-DEV`, y ejecutá
@@ -117,4 +122,3 @@ Con el contrato publicado y Stage validado, el proyecto Flutter agregará:
 - detalle, edición, cancelación y retiro según capacidades;
 - manejo de `401`, `403`, `404`, `409`, `422` y `429`;
 - pruebas de widgets e integración contra Stage.
-

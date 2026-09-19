@@ -33,6 +33,13 @@ class AppCapabilities {
     }
     return false;
   }
+
+  bool allows(String key, String action) {
+    final value = values[key];
+    if (value is bool) return value;
+    if (value is Map<String, dynamic>) return value[action] == true;
+    return false;
+  }
 }
 
 class AuthSession {

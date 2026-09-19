@@ -5,7 +5,11 @@ import 'core/network/api_client.dart';
 import 'core/security/secure_session_store.dart';
 import 'features/auth/data/auth_api.dart';
 import 'features/auth/data/auth_repository.dart';
+import 'features/auth/domain/auth_session.dart';
 import 'features/auth/presentation/auth_controller.dart';
+import 'features/rooms/data/rooms_api.dart';
+import 'features/rooms/data/rooms_repository.dart';
+import 'features/rooms/presentation/rooms_screen.dart';
 
 void main() => runApp(const LeivaApp());
 
@@ -19,9 +23,10 @@ abstract final class AppColors {
 }
 
 class LeivaApp extends StatefulWidget {
-  const LeivaApp({super.key, this.authController});
+  const LeivaApp({super.key, this.authController, this.roomsGateway});
 
   final AuthController? authController;
+  final RoomsGateway? roomsGateway;
 
   @override
   State<LeivaApp> createState() => _LeivaAppState();
@@ -30,19 +35,24 @@ class LeivaApp extends StatefulWidget {
 class _LeivaAppState extends State<LeivaApp> {
   late final AuthController _authController;
   late final bool _ownsAuthController;
+  RoomsGateway? _roomsGateway;
 
   @override
   void initState() {
     super.initState();
     _ownsAuthController = widget.authController == null;
-    _authController = widget.authController ?? _createAuthController();
+    if (widget.authController == null) {
+      final sessionStore = SecureSessionStore();
+      final client = ApiClient(config: AppConfig(), sessionStore: sessionStore);
+      _authController = AuthController(
+        AuthRepository(AuthApi(client.dio), sessionStore),
+      );
+      _roomsGateway = RoomsRepository(RoomsApi(client.dio));
+    } else {
+      _authController = widget.authController!;
+      _roomsGateway = widget.roomsGateway;
+    }
     _authController.initialize();
-  }
-
-  AuthController _createAuthController() {
-    final sessionStore = SecureSessionStore();
-    final client = ApiClient(config: AppConfig(), sessionStore: sessionStore);
-    return AuthController(AuthRepository(AuthApi(client.dio), sessionStore));
   }
 
   @override
@@ -91,6 +101,7 @@ class _LeivaAppState extends State<LeivaApp> {
           AuthStatus.checkingSession => const _SessionLoadingScreen(),
           AuthStatus.authenticated => HomeScreen(
             authController: _authController,
+            roomsGateway: _roomsGateway,
           ),
           _ => LoginScreen(authController: _authController),
         },
@@ -564,9 +575,14 @@ class _FieldLabel extends StatelessWidget {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.authController, super.key});
+  const HomeScreen({
+    required this.authController,
+    required this.roomsGateway,
+    super.key,
+  });
 
   final AuthController authController;
+  final RoomsGateway? roomsGateway;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -668,7 +684,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   selectedIndex: _selectedIndex,
                   onSelected: (index) => setState(() => _selectedIndex = index),
                 ),
-              Expanded(child: _DashboardContent(displayName: _displayName)),
+              Expanded(
+                child: _DashboardContent(
+                  displayName: _displayName,
+                  capabilities: widget.authController.session!.capabilities,
+                  roomsGateway: widget.roomsGateway,
+                ),
+              ),
             ],
           ),
         );
@@ -725,34 +747,57 @@ class _DesktopNavigation extends StatelessWidget {
 }
 
 class _DashboardContent extends StatelessWidget {
-  const _DashboardContent({required this.displayName});
+  const _DashboardContent({
+    required this.displayName,
+    required this.capabilities,
+    required this.roomsGateway,
+  });
 
   final String displayName;
-
-  static const modules = [
-    (
-      'Reservas de vehículos',
-      'Próximamente',
-      Icons.directions_car_outlined,
-      Color(0xFF2563EB),
-    ),
-    ('Salas', 'Próximamente', Icons.meeting_room_outlined, Color(0xFF7C3AED)),
-    (
-      'Estacionamiento',
-      'Próximamente',
-      Icons.local_parking_outlined,
-      Color(0xFF059669),
-    ),
-    (
-      'Mis gastos',
-      'Próximamente',
-      Icons.receipt_long_outlined,
-      Color(0xFFEA580C),
-    ),
-  ];
+  final AppCapabilities capabilities;
+  final RoomsGateway? roomsGateway;
 
   @override
   Widget build(BuildContext context) {
+    final roomsEnabled =
+        capabilities.allows('room_reservations', 'view') &&
+        roomsGateway != null;
+    final modules = [
+      const _ModuleData(
+        'Reservas de vehículos',
+        Icons.directions_car_outlined,
+        Color(0xFF2563EB),
+      ),
+      _ModuleData(
+        'Salas',
+        Icons.meeting_room_outlined,
+        const Color(0xFF7C3AED),
+        enabled: roomsEnabled,
+        onTap: roomsEnabled
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => RoomsScreen(
+                    gateway: roomsGateway!,
+                    canCreate: capabilities.allows(
+                      'room_reservations',
+                      'create',
+                    ),
+                  ),
+                ),
+              )
+            : null,
+      ),
+      const _ModuleData(
+        'Estacionamiento',
+        Icons.local_parking_outlined,
+        Color(0xFF059669),
+      ),
+      const _ModuleData(
+        'Mis gastos',
+        Icons.receipt_long_outlined,
+        Color(0xFFEA580C),
+      ),
+    ];
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Center(
@@ -850,9 +895,13 @@ class _DashboardContent extends StatelessWidget {
                             width: width,
                             child: _ModuleCard(
                               title: module.$1,
-                              subtitle: module.$2,
-                              icon: module.$3,
-                              color: module.$4,
+                              subtitle: module.enabled
+                                  ? 'Disponible'
+                                  : 'Próximamente',
+                              icon: module.$2,
+                              color: module.$3,
+                              enabled: module.enabled,
+                              onTap: module.onTap,
                             ),
                           ),
                         )
@@ -887,17 +936,37 @@ class _SectionTitle extends StatelessWidget {
   );
 }
 
+class _ModuleData {
+  const _ModuleData(
+    this.$1,
+    this.$2,
+    this.$3, {
+    this.enabled = false,
+    this.onTap,
+  });
+
+  final String $1;
+  final IconData $2;
+  final Color $3;
+  final bool enabled;
+  final VoidCallback? onTap;
+}
+
 class _ModuleCard extends StatelessWidget {
   const _ModuleCard({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.color,
+    required this.enabled,
+    this.onTap,
   });
   final String title;
   final String subtitle;
   final IconData icon;
   final Color color;
+  final bool enabled;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -906,7 +975,7 @@ class _ModuleCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: null,
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -947,7 +1016,12 @@ class _ModuleCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.lock_outline_rounded, color: Color(0xFF9CA3AF)),
+              Icon(
+                enabled
+                    ? Icons.arrow_forward_rounded
+                    : Icons.lock_outline_rounded,
+                color: enabled ? color : const Color(0xFF9CA3AF),
+              ),
             ],
           ),
         ),
