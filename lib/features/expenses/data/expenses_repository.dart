@@ -11,6 +11,13 @@ abstract interface class ExpensesGateway {
   Future<ExpenseRecord> validateFuel(int documentId);
   Future<ExpenseRecord> saveFuelStatement(int documentId, String statement);
   Future<ExpensePeriod> submitPeriod(int periodId);
+  Future<ExpensePeriod> createTravelAdvance(TravelAdvanceDraft draft);
+  Future<ExpenseRecord> updateRecord(int documentId, ExpenseUpdateDraft draft);
+  Future<ExpensePeriod> requestAdvanceCorrection(
+    int periodId,
+    String observation,
+  );
+  Future<ExpensePeriod> confirmReceipt(int periodId, ExpenseReceiptDraft draft);
 }
 
 class ExpensesRepository implements ExpensesGateway {
@@ -46,4 +53,26 @@ class ExpensesRepository implements ExpensesGateway {
   @override
   Future<ExpensePeriod> submitPeriod(int periodId) =>
       _api.submitPeriod(periodId);
+
+  @override
+  Future<ExpensePeriod> createTravelAdvance(TravelAdvanceDraft draft) =>
+      _api.createTravelAdvance(draft);
+
+  @override
+  Future<ExpenseRecord> updateRecord(
+    int documentId,
+    ExpenseUpdateDraft draft,
+  ) => _api.updateRecord(documentId, draft);
+
+  @override
+  Future<ExpensePeriod> requestAdvanceCorrection(
+    int periodId,
+    String observation,
+  ) => _api.requestAdvanceCorrection(periodId, observation);
+
+  @override
+  Future<ExpensePeriod> confirmReceipt(
+    int periodId,
+    ExpenseReceiptDraft draft,
+  ) => _api.confirmReceipt(periodId, draft);
 }

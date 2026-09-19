@@ -69,6 +69,83 @@ class ExpensesApi {
         ),
       );
 
+  Future<ExpensePeriod> createTravelAdvance(TravelAdvanceDraft draft) async =>
+      ExpensePeriod.fromJson(
+        apiData(
+          await _dio.post<dynamic>(
+            'my-expenses/travel-advances',
+            data: {
+              'label': draft.label,
+              'funding_mode': draft.fundingMode,
+              'currency': 'ARS',
+              'amount': draft.amount,
+              'received_at': _date(draft.receivedAt),
+              'coverage_start': _date(draft.coverageStart),
+              'coverage_end': _date(draft.coverageEnd),
+              'received_method': draft.receivedMethod,
+              'bank_reference': draft.bankReference,
+            },
+          ),
+        ),
+      );
+
+  Future<ExpenseRecord> updateRecord(
+    int documentId,
+    ExpenseUpdateDraft draft,
+  ) async => ExpenseRecord.fromJson(
+    apiData(
+      await _dio.patch<dynamic>(
+        'my-expenses/records/$documentId',
+        data: {
+          'expense_date': _date(draft.expenseDate),
+          'amount': draft.amount,
+          'currency': 'ARS',
+          'rubric': draft.rubric,
+          'period_id': draft.periodId,
+          'merchant_name': draft.merchantName,
+          'receipt_reference': draft.receiptReference,
+          'description': draft.description,
+          'fiscal_kind': 'unknown',
+          'travel_purpose': draft.travelPurpose,
+          'benefit_name': draft.benefitName,
+          'fuel_ticket_time': draft.fuelTicketTime,
+          'fuel_vehicle_plate': draft.fuelVehiclePlate,
+          'fuel_province': draft.fuelProvince,
+          'fuel_city': draft.fuelCity,
+        },
+      ),
+    ),
+  );
+
+  Future<ExpensePeriod> requestAdvanceCorrection(
+    int periodId,
+    String observation,
+  ) async => ExpensePeriod.fromJson(
+    apiData(
+      await _dio.post<dynamic>(
+        'my-expenses/periods/$periodId/advance-correction-request',
+        data: {'observation': observation},
+      ),
+    ),
+  );
+
+  Future<ExpensePeriod> confirmReceipt(
+    int periodId,
+    ExpenseReceiptDraft draft,
+  ) async => ExpensePeriod.fromJson(
+    apiData(
+      await _dio.post<dynamic>(
+        'my-expenses/periods/$periodId/receipt-confirmation',
+        data: {
+          'received_amount': draft.amount,
+          'received_at': _date(draft.receivedAt),
+          'received_method': draft.method,
+          'bank_reference': draft.bankReference,
+        },
+      ),
+    ),
+  );
+
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft) async {
     final file = draft.filePath != null
         ? await MultipartFile.fromFile(
@@ -87,6 +164,12 @@ class ExpensesApi {
         'merchant_name': draft.merchantName ?? '',
         'description': draft.description ?? '',
         'fiscal_kind': 'unknown',
+        'travel_purpose': draft.travelPurpose ?? '',
+        'benefit_name': draft.benefitName ?? '',
+        'fuel_ticket_time': draft.fuelTicketTime ?? '',
+        'fuel_vehicle_plate': draft.fuelVehiclePlate ?? '',
+        'fuel_province': draft.fuelProvince ?? '',
+        'fuel_city': draft.fuelCity ?? '',
         'personal_expense_period_id': draft.periodId?.toString() ?? '',
         'file': file,
       }),

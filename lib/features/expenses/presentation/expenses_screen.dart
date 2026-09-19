@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:pdfrx/pdfrx.dart';
 
 import '../../../core/network/api_error.dart';
 import '../../../core/security/idempotency_key.dart';
@@ -74,6 +75,77 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (uploaded == true) await _load();
   }
 
+  Future<void> _createAdvance() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => TravelAdvanceScreen(gateway: widget.gateway),
+      ),
+    );
+    if (created == true) await _load();
+  }
+
+  Future<void> _submitPeriod(ExpensePeriod period) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enviar rendición'),
+        content: Text(
+          'Se enviará “${period.label}” a Gerencia. Los comprobantes deben tener sus controles terminados.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _runPeriodAction(() => widget.gateway.submitPeriod(period.id));
+  }
+
+  Future<void> _requestCorrection(ExpensePeriod period) async {
+    final observation = await _textDialog(
+      context,
+      title: 'Solicitar corrección',
+      label: 'Motivo para Gerencia',
+    );
+    if (observation == null) return;
+    await _runPeriodAction(
+      () => widget.gateway.requestAdvanceCorrection(period.id, observation),
+    );
+  }
+
+  Future<void> _confirmReceipt(ExpensePeriod period) async {
+    final draft = await showDialog<ExpenseReceiptDraft>(
+      context: context,
+      builder: (_) => const _ReceiptDialog(),
+    );
+    if (draft == null) return;
+    await _runPeriodAction(
+      () => widget.gateway.confirmReceipt(period.id, draft),
+    );
+  }
+
+  Future<void> _runPeriodAction(
+    Future<ExpensePeriod> Function() operation,
+  ) async {
+    try {
+      await operation();
+      if (!mounted) return;
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_expenseMessage(error))));
+    }
+  }
+
   Future<void> _openRecord(ExpenseRecord record) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -91,6 +163,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
       actions: [
+        if (_dashboard?.allows('advances') == true)
+          IconButton(
+            tooltip: 'Registrar adelanto',
+            onPressed: _loading ? null : _createAdvance,
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+          ),
         IconButton(
           onPressed: _loading ? null : _load,
           icon: const Icon(Icons.refresh_rounded),
@@ -153,7 +231,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ...data.periods.map(
             (period) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _PeriodCard(period),
+              child: _PeriodCard(
+                period,
+                onSubmit:
+                    period.statusCode == 'open' ||
+                        period.statusCode == 'observed'
+                    ? () => _submitPeriod(period)
+                    : null,
+                onCorrection:
+                    data.allows('advances') &&
+                        (period.fundingMode == 'advance' ||
+                            period.fundingMode == 'allowance') &&
+                        (period.statusCode == 'open' ||
+                            period.statusCode == 'observed')
+                    ? () => _requestCorrection(period)
+                    : null,
+                onReceipt: period.statusCode == 'approved'
+                    ? () => _confirmReceipt(period)
+                    : null,
+              ),
             ),
           ),
         const SizedBox(height: 18),
@@ -315,6 +411,37 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
     }
   }
 
+  Future<void> _edit() async {
+    if (_record == null) return;
+    setState(() => _working = true);
+    try {
+      final values = await Future.wait<dynamic>([
+        widget.gateway.dashboard(),
+        widget.gateway.rubrics(),
+      ]);
+      if (!mounted) return;
+      setState(() => _working = false);
+      final changed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => EditExpenseScreen(
+            gateway: widget.gateway,
+            record: _record!,
+            dashboard: values[0] as ExpenseDashboard,
+            rubrics: values[1] as ExpenseRubrics,
+          ),
+        ),
+      );
+      if (changed == true) await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _working = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -369,8 +496,15 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                   ),
                 ] else if (_file?.isPdf == true) ...[
                   const SizedBox(height: 14),
-                  const _SmallEmpty(
-                    'El PDF fue validado y recuperado de forma segura. La vista PDF integrada se incorporará con el visor corporativo.',
+                  SizedBox(
+                    height: 520,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: PdfViewer.data(
+                        Uint8List.fromList(_file!.bytes),
+                        sourceName: 'comprobante-${widget.documentId}.pdf',
+                      ),
+                    ),
                   ),
                 ],
                 const SizedBox(height: 12),
@@ -378,21 +512,31 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: _working ? null : _validateFuel,
-                      icon: const Icon(Icons.local_gas_station_outlined),
-                      label: const Text('Validar combustible'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _working ? null : _statement,
-                      icon: const Icon(Icons.edit_note_outlined),
-                      label: const Text('Cargar descargo'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: _working ? null : _resubmit,
-                      icon: const Icon(Icons.send_outlined),
-                      label: const Text('Reenviar observado'),
-                    ),
+                    if (_record!.status == 'personal_expense_draft' ||
+                        _record!.status == 'personal_expense_observed')
+                      OutlinedButton.icon(
+                        onPressed: _working ? null : _edit,
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Editar datos'),
+                      ),
+                    if (_record!.fuelEvidence != null) ...[
+                      OutlinedButton.icon(
+                        onPressed: _working ? null : _validateFuel,
+                        icon: const Icon(Icons.local_gas_station_outlined),
+                        label: const Text('Validar combustible'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _working ? null : _statement,
+                        icon: const Icon(Icons.edit_note_outlined),
+                        label: const Text('Cargar descargo'),
+                      ),
+                    ],
+                    if (_record!.status == 'personal_expense_observed')
+                      FilledButton.icon(
+                        onPressed: _working ? null : _resubmit,
+                        icon: const Icon(Icons.send_outlined),
+                        label: const Text('Reenviar observado'),
+                      ),
                   ],
                 ),
               ],
@@ -435,6 +579,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _amount = TextEditingController();
   final _merchant = TextEditingController();
   final _description = TextEditingController();
+  final _purpose = TextEditingController();
+  final _fuelTime = TextEditingController();
+  final _fuelPlate = TextEditingController();
+  final _fuelProvince = TextEditingController();
+  final _fuelCity = TextEditingController();
   late String _section;
   late DateTime _date;
   String? _rubric;
@@ -446,6 +595,21 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   bool get _travelAllowed => widget.dashboard.allows('travel');
   List<String> get _currentRubrics =>
       _section == 'travel' ? widget.rubrics.travel : widget.rubrics.benefits;
+  bool get _isFuel =>
+      _section == 'travel' &&
+      {'combustible', 'peajes'}.contains(_rubric?.toLowerCase());
+  List<ExpensePeriod> get _travelPeriods => widget.dashboard.periods
+      .where(
+        (item) =>
+            item.circuit == 'travel_expense' &&
+            {
+              'open',
+              'observed',
+              'partially_observed',
+              'partially_approved',
+            }.contains(item.statusCode),
+      )
+      .toList();
 
   @override
   void initState() {
@@ -453,7 +617,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     _section = _travelAllowed ? 'travel' : 'benefits';
     _date = DateTime.now();
     _rubric = _currentRubrics.firstOrNull;
-    _periodId = widget.dashboard.periods.firstOrNull?.id;
+    _periodId = _travelPeriods.firstOrNull?.id;
   }
 
   @override
@@ -461,6 +625,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     _amount.dispose();
     _merchant.dispose();
     _description.dispose();
+    _purpose.dispose();
+    _fuelTime.dispose();
+    _fuelPlate.dispose();
+    _fuelProvince.dispose();
+    _fuelCity.dispose();
     super.dispose();
   }
 
@@ -468,6 +637,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     setState(() {
       _section = value;
       _rubric = _currentRubrics.firstOrNull;
+      _periodId = value == 'travel' ? _travelPeriods.firstOrNull?.id : null;
     });
   }
 
@@ -528,6 +698,16 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           periodId: _section == 'travel' ? _periodId : null,
           merchantName: _expenseNullable(_merchant.text),
           description: _expenseNullable(_description.text),
+          travelPurpose: _section == 'travel'
+              ? _expenseNullable(_purpose.text)
+              : null,
+          benefitName: _section == 'benefits'
+              ? _expenseNullable(_purpose.text)
+              : null,
+          fuelTicketTime: _isFuel ? _expenseNullable(_fuelTime.text) : null,
+          fuelVehiclePlate: _isFuel ? _expenseNullable(_fuelPlate.text) : null,
+          fuelProvince: _isFuel ? _expenseNullable(_fuelProvince.text) : null,
+          fuelCity: _isFuel ? _expenseNullable(_fuelCity.text) : null,
         ),
       );
       if (!mounted) return;
@@ -612,7 +792,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             DropdownButtonFormField<int>(
               initialValue: _periodId,
               decoration: const InputDecoration(labelText: 'Rendición'),
-              items: widget.dashboard.periods
+              items: _travelPeriods
                   .map(
                     (period) => DropdownMenuItem(
                       value: period.id,
@@ -626,6 +806,63 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             ),
           ],
           const SizedBox(height: 16),
+          TextFormField(
+            controller: _purpose,
+            maxLength: 220,
+            decoration: InputDecoration(
+              labelText: _section == 'travel'
+                  ? 'Motivo del viaje (opcional)'
+                  : 'Beneficio utilizado',
+            ),
+            validator: (value) =>
+                _section == 'benefits' && (value ?? '').trim().isEmpty
+                ? 'Indicá el beneficio utilizado'
+                : null,
+          ),
+          if (_isFuel) ...[
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _fuelTime,
+              decoration: const InputDecoration(
+                labelText: 'Hora del ticket (HH:MM)',
+              ),
+              validator: (value) =>
+                  RegExp(r'^([01]\d|2[0-3]):[0-5]\d$')
+                      .hasMatch((value ?? '').trim())
+                  ? null
+                  : 'Usá el formato HH:MM',
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _fuelPlate,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(labelText: 'Patente'),
+              validator: (value) =>
+                  (value ?? '').replaceAll(RegExp('[^A-Za-z0-9]'), '').length <
+                      6
+                  ? 'Ingresá una patente válida'
+                  : null,
+            ),
+            if (_rubric?.toLowerCase() == 'combustible') ...[
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _fuelProvince,
+                decoration: const InputDecoration(labelText: 'Provincia'),
+                validator: (value) => (value ?? '').trim().length < 2
+                    ? 'Ingresá la provincia'
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _fuelCity,
+                decoration: const InputDecoration(labelText: 'Ciudad'),
+                validator: (value) => (value ?? '').trim().length < 2
+                    ? 'Ingresá la ciudad'
+                    : null,
+              ),
+            ],
+          ],
+          const SizedBox(height: 8),
           TextFormField(
             controller: _merchant,
             maxLength: 220,
@@ -674,9 +911,572 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   );
 }
 
+class TravelAdvanceScreen extends StatefulWidget {
+  const TravelAdvanceScreen({required this.gateway, super.key});
+  final ExpensesGateway gateway;
+
+  @override
+  State<TravelAdvanceScreen> createState() => _TravelAdvanceScreenState();
+}
+
+class _TravelAdvanceScreenState extends State<TravelAdvanceScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _label = TextEditingController();
+  final _amount = TextEditingController();
+  final _reference = TextEditingController();
+  String _fundingMode = 'advance';
+  String _method = 'transfer';
+  DateTime _receivedAt = DateTime.now();
+  DateTime _coverageStart = DateTime.now();
+  DateTime _coverageEnd = DateTime.now().add(const Duration(days: 30));
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _label.dispose();
+    _amount.dispose();
+    _reference.dispose();
+    super.dispose();
+  }
+
+  Future<DateTime?> _date(DateTime initial) => showDatePicker(
+    context: context,
+    initialDate: initial,
+    firstDate: DateTime.now().subtract(const Duration(days: 365)),
+    lastDate: DateTime.now().add(const Duration(days: 730)),
+  );
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_coverageEnd.isBefore(_coverageStart) ||
+        _receivedAt.isAfter(_coverageEnd)) {
+      setState(() => _error = 'Revisá las fechas de acreditación y cobertura.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.gateway.createTravelAdvance(
+        TravelAdvanceDraft(
+          label: _label.text.trim(),
+          fundingMode: _fundingMode,
+          amount: double.parse(_amount.text.replaceAll(',', '.')),
+          receivedAt: _receivedAt,
+          coverageStart: _coverageStart,
+          coverageEnd: _coverageEnd,
+          receivedMethod: _method,
+          bankReference: _expenseNullable(_reference.text),
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Registrar adelanto')),
+    body: Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          TextFormField(
+            controller: _label,
+            maxLength: 160,
+            decoration: const InputDecoration(labelText: 'Nombre'),
+          ),
+          DropdownButtonFormField<String>(
+            initialValue: _fundingMode,
+            decoration: const InputDecoration(labelText: 'Tipo de saldo'),
+            items: const [
+              DropdownMenuItem(
+                value: 'advance',
+                child: Text('Adelanto puntual'),
+              ),
+              DropdownMenuItem(
+                value: 'allowance',
+                child: Text('Asignación periódica'),
+              ),
+            ],
+            onChanged: (value) => setState(() => _fundingMode = value!),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Importe',
+              prefixText: r'$ ',
+            ),
+            validator: (value) =>
+                (double.tryParse((value ?? '').replaceAll(',', '.')) ?? 0) <= 0
+                ? 'Ingresá un importe válido'
+                : null,
+          ),
+          const SizedBox(height: 16),
+          _DateTile(
+            label: 'Fecha de acreditación',
+            value: _receivedAt,
+            onTap: () async {
+              final value = await _date(_receivedAt);
+              if (value != null) setState(() => _receivedAt = value);
+            },
+          ),
+          const SizedBox(height: 16),
+          _DateTile(
+            label: 'Cobertura desde',
+            value: _coverageStart,
+            onTap: () async {
+              final value = await _date(_coverageStart);
+              if (value != null) setState(() => _coverageStart = value);
+            },
+          ),
+          const SizedBox(height: 16),
+          _DateTile(
+            label: 'Cobertura hasta',
+            value: _coverageEnd,
+            onTap: () async {
+              final value = await _date(_coverageEnd);
+              if (value != null) setState(() => _coverageEnd = value);
+            },
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            initialValue: _method,
+            decoration: const InputDecoration(labelText: 'Medio recibido'),
+            items: const [
+              DropdownMenuItem(value: 'transfer', child: Text('Transferencia')),
+              DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
+            ],
+            onChanged: (value) => setState(() => _method = value!),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _reference,
+            maxLength: 160,
+            decoration: const InputDecoration(
+              labelText: 'Referencia bancaria (opcional)',
+            ),
+          ),
+          if (_error != null)
+            Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+          const SizedBox(height: 18),
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            child: Text(_saving ? 'Guardando...' : 'Registrar adelanto'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class EditExpenseScreen extends StatefulWidget {
+  const EditExpenseScreen({
+    required this.gateway,
+    required this.record,
+    required this.dashboard,
+    required this.rubrics,
+    super.key,
+  });
+  final ExpensesGateway gateway;
+  final ExpenseRecord record;
+  final ExpenseDashboard dashboard;
+  final ExpenseRubrics rubrics;
+
+  @override
+  State<EditExpenseScreen> createState() => _EditExpenseScreenState();
+}
+
+class _EditExpenseScreenState extends State<EditExpenseScreen> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _amount;
+  late final TextEditingController _merchant;
+  late final TextEditingController _reference;
+  late final TextEditingController _description;
+  late final TextEditingController _purpose;
+  late final TextEditingController _fuelTime;
+  late final TextEditingController _fuelPlate;
+  late final TextEditingController _fuelProvince;
+  late final TextEditingController _fuelCity;
+  late DateTime _date;
+  late String? _rubric;
+  late int? _periodId;
+  bool _saving = false;
+  String? _error;
+
+  bool get _travel => widget.record.type == 'travel_expense';
+  List<String> get _rubrics =>
+      _travel ? widget.rubrics.travel : widget.rubrics.benefits;
+  bool get _isFuel =>
+      _travel && {'combustible', 'peajes'}.contains(_rubric?.toLowerCase());
+  List<ExpensePeriod> get _periods => widget.dashboard.periods
+      .where(
+        (item) =>
+            item.circuit == (_travel ? 'travel_expense' : 'employee_benefit') &&
+            {
+              'open',
+              'observed',
+              'partially_observed',
+              'partially_approved',
+            }.contains(item.statusCode),
+      )
+      .toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _amount = TextEditingController(
+      text: widget.record.amount?.toStringAsFixed(2),
+    );
+    _merchant = TextEditingController(text: widget.record.merchant);
+    _reference = TextEditingController(text: widget.record.reference);
+    _description = TextEditingController(text: widget.record.description);
+    _purpose = TextEditingController(
+      text: _travel ? widget.record.travelPurpose : widget.record.benefitName,
+    );
+    final fuel = widget.record.fuelEvidence ?? const <String, dynamic>{};
+    _fuelTime = TextEditingController(text: fuel['ticket_time'] as String?);
+    _fuelPlate = TextEditingController(text: fuel['vehicle_plate'] as String?);
+    _fuelProvince = TextEditingController(text: fuel['province'] as String?);
+    _fuelCity = TextEditingController(text: fuel['city'] as String?);
+    _date = widget.record.date ?? DateTime.now();
+    _rubric = _rubrics.contains(widget.record.rubric)
+        ? widget.record.rubric
+        : null;
+    _periodId = _periods.any((item) => item.id == widget.record.periodId)
+        ? widget.record.periodId
+        : (_periods.isEmpty ? null : _periods.first.id);
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _merchant.dispose();
+    _reference.dispose();
+    _description.dispose();
+    _purpose.dispose();
+    _fuelTime.dispose();
+    _fuelPlate.dispose();
+    _fuelProvince.dispose();
+    _fuelCity.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.gateway.updateRecord(
+        widget.record.id,
+        ExpenseUpdateDraft(
+          expenseDate: _date,
+          amount: double.parse(_amount.text.replaceAll(',', '.')),
+          rubric: _rubric!,
+          periodId: _periodId!,
+          merchantName: _expenseNullable(_merchant.text),
+          receiptReference: _expenseNullable(_reference.text),
+          description: _expenseNullable(_description.text),
+          travelPurpose: _travel ? _expenseNullable(_purpose.text) : null,
+          benefitName: _travel ? null : _expenseNullable(_purpose.text),
+          fuelTicketTime: _isFuel ? _expenseNullable(_fuelTime.text) : null,
+          fuelVehiclePlate: _isFuel ? _expenseNullable(_fuelPlate.text) : null,
+          fuelProvince: _isFuel ? _expenseNullable(_fuelProvince.text) : null,
+          fuelCity: _isFuel ? _expenseNullable(_fuelCity.text) : null,
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _expenseMessage(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Editar comprobante')),
+    body: Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          _DateTile(
+            label: 'Fecha del gasto',
+            value: _date,
+            onTap: () async {
+              final value = await showDatePicker(
+                context: context,
+                initialDate: _date,
+                firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                lastDate: DateTime.now(),
+              );
+              if (value != null) setState(() => _date = value);
+            },
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Importe',
+              prefixText: r'$ ',
+            ),
+            validator: (value) =>
+                (double.tryParse((value ?? '').replaceAll(',', '.')) ?? 0) <= 0
+                ? 'Ingresá un importe válido'
+                : null,
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            initialValue: _rubric,
+            decoration: const InputDecoration(labelText: 'Rubro'),
+            items: _rubrics
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _rubric = value),
+            validator: (value) => value == null ? 'Seleccioná un rubro' : null,
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<int>(
+            initialValue: _periodId,
+            decoration: const InputDecoration(labelText: 'Rendición'),
+            items: _periods
+                .map(
+                  (value) => DropdownMenuItem(
+                    value: value.id,
+                    child: Text(value.label),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _periodId = value),
+            validator: (value) =>
+                value == null ? 'Seleccioná una rendición editable' : null,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _purpose,
+            decoration: InputDecoration(
+              labelText: _travel ? 'Motivo del viaje' : 'Beneficio utilizado',
+            ),
+            validator: (value) => !_travel && (value ?? '').trim().isEmpty
+                ? 'Indicá el beneficio utilizado'
+                : null,
+          ),
+          if (_isFuel) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _fuelTime,
+              decoration: const InputDecoration(
+                labelText: 'Hora del ticket (HH:MM)',
+              ),
+              validator: (value) =>
+                  RegExp(r'^([01]\d|2[0-3]):[0-5]\d$')
+                      .hasMatch((value ?? '').trim())
+                  ? null
+                  : 'Usá el formato HH:MM',
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _fuelPlate,
+              decoration: const InputDecoration(labelText: 'Patente'),
+              validator: (value) =>
+                  (value ?? '').replaceAll(RegExp('[^A-Za-z0-9]'), '').length <
+                      6
+                  ? 'Ingresá una patente válida'
+                  : null,
+            ),
+            if (_rubric?.toLowerCase() == 'combustible') ...[
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _fuelProvince,
+                decoration: const InputDecoration(labelText: 'Provincia'),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _fuelCity,
+                decoration: const InputDecoration(labelText: 'Ciudad'),
+              ),
+            ],
+          ],
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _merchant,
+            decoration: const InputDecoration(labelText: 'Comercio'),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _reference,
+            decoration: const InputDecoration(labelText: 'Referencia'),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _description,
+            maxLines: 3,
+            decoration: const InputDecoration(labelText: 'Descripción'),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Color(0xFFB42318)),
+              ),
+            ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            child: Text(_saving ? 'Guardando...' : 'Guardar cambios'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _DateTile extends StatelessWidget {
+  const _DateTile({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+  final String label;
+  final DateTime value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        suffixIcon: const Icon(Icons.calendar_today_outlined),
+      ),
+      child: Text(_expenseDate(value)),
+    ),
+  );
+}
+
+class _ReceiptDialog extends StatefulWidget {
+  const _ReceiptDialog();
+
+  @override
+  State<_ReceiptDialog> createState() => _ReceiptDialogState();
+}
+
+class _ReceiptDialogState extends State<_ReceiptDialog> {
+  final _amount = TextEditingController();
+  final _reference = TextEditingController();
+  DateTime _date = DateTime.now();
+  String _method = 'transfer';
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _reference.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Confirmar acreditación'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Importe recibido'),
+          ),
+          const SizedBox(height: 12),
+          _DateTile(
+            label: 'Fecha recibida',
+            value: _date,
+            onTap: () async {
+              final value = await showDatePicker(
+                context: context,
+                initialDate: _date,
+                firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                lastDate: DateTime.now(),
+              );
+              if (value != null) setState(() => _date = value);
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _method,
+            decoration: const InputDecoration(labelText: 'Medio'),
+            items: const [
+              DropdownMenuItem(value: 'transfer', child: Text('Transferencia')),
+              DropdownMenuItem(value: 'cash', child: Text('Efectivo')),
+            ],
+            onChanged: (value) => setState(() => _method = value!),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _reference,
+            decoration: const InputDecoration(
+              labelText: 'Referencia (opcional)',
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Volver'),
+      ),
+      FilledButton(
+        onPressed: () {
+          final amount = double.tryParse(_amount.text.replaceAll(',', '.'));
+          if (amount == null || amount <= 0) return;
+          Navigator.pop(
+            context,
+            ExpenseReceiptDraft(
+              amount: amount,
+              receivedAt: _date,
+              method: _method,
+              bankReference: _expenseNullable(_reference.text),
+            ),
+          );
+        },
+        child: const Text('Confirmar'),
+      ),
+    ],
+  );
+}
+
 class _PeriodCard extends StatelessWidget {
-  const _PeriodCard(this.period);
+  const _PeriodCard(
+    this.period, {
+    this.onSubmit,
+    this.onCorrection,
+    this.onReceipt,
+  });
   final ExpensePeriod period;
+  final VoidCallback? onSubmit;
+  final VoidCallback? onCorrection;
+  final VoidCallback? onReceipt;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(16),
@@ -717,6 +1517,33 @@ class _PeriodCard extends StatelessWidget {
               ),
             ),
           ),
+        if (onSubmit != null || onCorrection != null || onReceipt != null) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (onSubmit != null)
+                FilledButton.tonalIcon(
+                  onPressed: onSubmit,
+                  icon: const Icon(Icons.send_outlined),
+                  label: const Text('Enviar'),
+                ),
+              if (onCorrection != null)
+                OutlinedButton.icon(
+                  onPressed: onCorrection,
+                  icon: const Icon(Icons.edit_note_outlined),
+                  label: const Text('Solicitar corrección'),
+                ),
+              if (onReceipt != null)
+                OutlinedButton.icon(
+                  onPressed: onReceipt,
+                  icon: const Icon(Icons.account_balance_outlined),
+                  label: const Text('Confirmar acreditación'),
+                ),
+            ],
+          ),
+        ],
       ],
     ),
   );
@@ -850,3 +1677,39 @@ String _expenseDate(DateTime value) =>
     '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
 String _money(double? value, String currency) =>
     value == null ? '—' : '$currency ${value.toStringAsFixed(2)}';
+
+Future<String?> _textDialog(
+  BuildContext context, {
+  required String title,
+  required String label,
+}) async {
+  final controller = TextEditingController();
+  final value = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        minLines: 3,
+        maxLines: 6,
+        maxLength: 4000,
+        decoration: InputDecoration(labelText: label),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Volver'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final text = controller.text.trim();
+            if (text.length >= 8) Navigator.pop(context, text);
+          },
+          child: const Text('Enviar'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  return value;
+}

@@ -2,33 +2,51 @@ class ExpensePeriod {
   const ExpensePeriod({
     required this.id,
     required this.status,
+    required this.statusCode,
     required this.label,
     required this.currency,
     required this.documentCount,
+    required this.circuit,
     this.advanceAmount,
     this.consumedAmount,
     this.availableAmount,
+    this.fundingMode,
+    this.coverageStart,
+    this.coverageEnd,
+    this.receivedAt,
   });
 
   factory ExpensePeriod.fromJson(Map<String, dynamic> json) => ExpensePeriod(
     id: json['id'] as int,
     status: json['status_label'] as String? ?? json['status'] as String,
+    statusCode: json['status'] as String,
     label: json['label'] as String? ?? 'Rendición',
     currency: json['currency'] as String? ?? 'ARS',
     documentCount: json['document_count'] as int? ?? 0,
+    circuit: json['circuit'] as String? ?? 'employee_benefit',
     advanceAmount: (json['advance_amount'] as num?)?.toDouble(),
     consumedAmount: (json['consumed_amount'] as num?)?.toDouble(),
     availableAmount: (json['available_amount'] as num?)?.toDouble(),
+    fundingMode: json['funding_mode'] as String?,
+    coverageStart: DateTime.tryParse(json['coverage_start'] as String? ?? ''),
+    coverageEnd: DateTime.tryParse(json['coverage_end'] as String? ?? ''),
+    receivedAt: DateTime.tryParse(json['received_at'] as String? ?? ''),
   );
 
   final int id;
   final String status;
+  final String statusCode;
   final String label;
   final String currency;
   final int documentCount;
+  final String circuit;
   final double? advanceAmount;
   final double? consumedAmount;
   final double? availableAmount;
+  final String? fundingMode;
+  final DateTime? coverageStart;
+  final DateTime? coverageEnd;
+  final DateTime? receivedAt;
 }
 
 class ExpenseRecord {
@@ -46,6 +64,10 @@ class ExpenseRecord {
     this.reviewReason,
     this.periodId,
     this.fuelEvidence,
+    this.description,
+    this.reference,
+    this.travelPurpose,
+    this.benefitName,
   });
 
   factory ExpenseRecord.fromJson(Map<String, dynamic> json) => ExpenseRecord(
@@ -64,6 +86,10 @@ class ExpenseRecord {
     reviewReason: json['review_reason'] as String?,
     periodId: json['period_id'] as int?,
     fuelEvidence: json['fuel_evidence'] as Map<String, dynamic>?,
+    description: json['description'] as String?,
+    reference: json['reference'] as String?,
+    travelPurpose: json['trip'] as String?,
+    benefitName: json['benefit_name'] as String?,
   );
 
   final int id;
@@ -79,6 +105,10 @@ class ExpenseRecord {
   final String? reviewReason;
   final int? periodId;
   final Map<String, dynamic>? fuelEvidence;
+  final String? description;
+  final String? reference;
+  final String? travelPurpose;
+  final String? benefitName;
 }
 
 class ExpenseFile {
@@ -140,6 +170,12 @@ class ExpenseUploadDraft {
     this.periodId,
     this.merchantName,
     this.description,
+    this.travelPurpose,
+    this.benefitName,
+    this.fuelTicketTime,
+    this.fuelVehiclePlate,
+    this.fuelProvince,
+    this.fuelCity,
   });
 
   final String idempotencyKey;
@@ -153,6 +189,80 @@ class ExpenseUploadDraft {
   final int? periodId;
   final String? merchantName;
   final String? description;
+  final String? travelPurpose;
+  final String? benefitName;
+  final String? fuelTicketTime;
+  final String? fuelVehiclePlate;
+  final String? fuelProvince;
+  final String? fuelCity;
+}
+
+class TravelAdvanceDraft {
+  const TravelAdvanceDraft({
+    required this.label,
+    required this.fundingMode,
+    required this.amount,
+    required this.receivedAt,
+    required this.coverageStart,
+    required this.coverageEnd,
+    required this.receivedMethod,
+    this.bankReference,
+  });
+
+  final String label;
+  final String fundingMode;
+  final double amount;
+  final DateTime receivedAt;
+  final DateTime coverageStart;
+  final DateTime coverageEnd;
+  final String receivedMethod;
+  final String? bankReference;
+}
+
+class ExpenseUpdateDraft {
+  const ExpenseUpdateDraft({
+    required this.expenseDate,
+    required this.amount,
+    required this.rubric,
+    required this.periodId,
+    this.merchantName,
+    this.receiptReference,
+    this.description,
+    this.travelPurpose,
+    this.benefitName,
+    this.fuelTicketTime,
+    this.fuelVehiclePlate,
+    this.fuelProvince,
+    this.fuelCity,
+  });
+
+  final DateTime expenseDate;
+  final double amount;
+  final String rubric;
+  final int periodId;
+  final String? merchantName;
+  final String? receiptReference;
+  final String? description;
+  final String? travelPurpose;
+  final String? benefitName;
+  final String? fuelTicketTime;
+  final String? fuelVehiclePlate;
+  final String? fuelProvince;
+  final String? fuelCity;
+}
+
+class ExpenseReceiptDraft {
+  const ExpenseReceiptDraft({
+    required this.amount,
+    required this.receivedAt,
+    required this.method,
+    this.bankReference,
+  });
+
+  final double amount;
+  final DateTime receivedAt;
+  final String method;
+  final String? bankReference;
 }
 
 List<Map<String, dynamic>> _maps(dynamic value) {

@@ -312,6 +312,16 @@ class _FakeParkingGateway implements ParkingGateway {
 
 class _FakeExpensesGateway implements ExpensesGateway {
   @override
+  Future<ExpensePeriod> confirmReceipt(
+    int periodId,
+    ExpenseReceiptDraft draft,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<ExpensePeriod> createTravelAdvance(TravelAdvanceDraft draft) =>
+      throw UnimplementedError();
+
+  @override
   Future<ExpenseFile> file(int documentId) => throw UnimplementedError();
 
   @override
@@ -352,4 +362,16 @@ class _FakeExpensesGateway implements ExpensesGateway {
   @override
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft) =>
       throw UnimplementedError();
+
+  @override
+  Future<ExpenseRecord> updateRecord(
+    int documentId,
+    ExpenseUpdateDraft draft,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<ExpensePeriod> requestAdvanceCorrection(
+    int periodId,
+    String observation,
+  ) => throw UnimplementedError();
 }

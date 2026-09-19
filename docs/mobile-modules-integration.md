@@ -19,7 +19,7 @@ no permiten lectura anónima.
 | Salas | Listado, detalle, disponibilidad, alta idempotente, cancelación y dársenas para visitantes externos. |
 | Vehículos | En curso, próximos e historial; disponibilidad, solicitud, inicio, finalización, cancelación, extensión, telemetría, trayectoria y multas propias. |
 | Estacionamiento | Solicitudes propias, plano lógico por sucursal, alta idempotente y cancelación. |
-| Mis Gastos | Tablero, rendiciones, comprobantes, alertas, rubros, carga multipart, detalle, archivo, reenvío y evidencia de combustible. |
+| Mis Gastos | Tablero, rendiciones, adelantos, carga y edición de comprobantes, preview local de imágenes/PDF, envío y corrección de períodos, confirmación de acreditaciones, reenvío y evidencia de combustible. |
 
 Cada acceso se muestra únicamente cuando `/auth/me` devuelve la capacidad
 correspondiente. Las comprobaciones de interfaz no reemplazan la autorización
@@ -35,6 +35,8 @@ del backend.
 - El selector de comprobantes admite PDF, JPG y PNG, con un límite preventivo
   de 15 MB en el cliente. El archivo se envía al portal y no se conserva en la
   aplicación.
+- Los previews se recuperan mediante la sesión segura y se renderizan desde
+  memoria; no se crean archivos públicos ni enlaces reutilizables.
 - El cliente no envía identificadores de usuario, empleado, rol ni permisos.
 - Un `401` elimina inmediatamente cookie, CSRF e identidad local. Un `403`
   fuerza una nueva lectura de `/auth/me` para retirar capacidades revocadas.
