@@ -10,6 +10,7 @@ usuario confirme que terminó de enviar la serie de casos.
 | Sección | Documento | Estado |
 | --- | --- | --- |
 | Reserva de salas | [01-reserva-de-salas.md](01-reserva-de-salas.md) | Recibida, pendiente de implementación |
+| Reserva de dársenas | [02-reserva-de-darsenas.md](02-reserva-de-darsenas.md) | Recibida, pendiente de implementación |
 
 ## Criterios generales
 
@@ -21,4 +22,3 @@ usuario confirme que terminó de enviar la serie de casos.
 - Las acciones destructivas requieren confirmación antes de enviarse.
 - Cada sección debe comprobar persistencia y paridad entre portal web y Android
   antes de marcarse como terminada.
-
