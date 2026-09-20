@@ -209,6 +209,12 @@ La línea debe indicar el sentido del viaje mediante flechas u otra señal
 visual. Un recorrido con muchos puntos debe agruparse o simplificarse para
 mantener rendimiento sin alterar los eventos relevantes.
 
+El mapa debe incluir una acción de maximizar. En pantalla completa debe
+comportarse como un navegador GPS: ocupar el área útil completa, admitir gestos
+de zoom y desplazamiento, funcionar en vertical u horizontal, encuadrar la ruta,
+centrar el vehículo o evento seleccionado y permitir volver sin perder filtros,
+marcador ni posición de cámara.
+
 ### Actualización y seguridad
 
 `Actualizar posición` consulta nuevamente al portal/GeoSat. No inicia rastreo
@@ -269,6 +275,7 @@ contrato provea coordenadas.
 - Mostrar un historial de agenda exclusivamente gerencial.
 - Consultar trayectoria y posición desde GeoSat, sin GPS del teléfono.
 - Representar sentido, inicio, posiciones, radares, excesos y detenciones.
+- Maximizar la trayectoria a pantalla completa con interacción tipo GPS.
 - Mostrar duración de cada detención.
 - Abrir los eventos de un KPI y centrar su punto exacto en el mapa.
 - Respetar permisos, estados, errores e idempotencia del portal.
@@ -284,4 +291,3 @@ contrato provea coordenadas.
 - frecuencia permitida para actualizar posición;
 - comportamiento de la dársena si la reserva o el viaje se extiende;
 - vínculo entre avisos, multas, estimaciones preventivas y expedientes.
-

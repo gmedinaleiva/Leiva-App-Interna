@@ -51,6 +51,11 @@ se observan sectores separados por circulación vehicular y posiciones en
 distintos pisos.
 
 Cada automóvil o posición debe ser táctil y conservar su código identificador.
+Los automóviles diseñados para el portal son parte esencial de esta experiencia
+y deben aparecer en la app. Se deben reutilizar sus recursos visuales
+originales o una adaptación fiel, respetando forma, orientación y ubicación en
+el plano; no deben sustituirse por rectángulos o pines genéricos.
+
 El color comunica el estado:
 
 - verde: disponible para solicitar en el período consultado;
@@ -63,6 +68,8 @@ La app debe incluir una leyenda siempre visible y no depender únicamente del
 color: cada posición necesita texto, icono, contorno o etiqueta de estado para
 accesibilidad. El plano debe admitir desplazamiento y ampliación cuando no
 quepa completo en el teléfono, manteniendo una referencia clara del sector.
+También debe ofrecer un modo de pantalla completa para operar el plano mediante
+zoom y desplazamiento, conservando filtros y selección al volver.
 
 Comportamiento al tocar:
 
@@ -151,6 +158,8 @@ validarse contra `/api/app/v1` antes de implementarse.
 
 - Consultar por sucursal, rango y tipo de vehículo.
 - Ver todas las dársenas de la sucursal en un plano interactivo.
+- Conservar los automóviles originales como controles táctiles del plano.
+- Maximizar el plano a pantalla completa sin perder consulta ni selección.
 - Distinguir disponible, pendiente, reservada e institucional mediante color y
   etiqueta accesible.
 - Abrir la solicitud sólo desde una posición disponible.
@@ -171,4 +180,3 @@ validarse contra `/api/app/v1` antes de implementarse.
 - posibilidad de cambiar vehículo o patente después de solicitar;
 - reglas de cancelación según proximidad al horario;
 - comportamiento exacto de dársenas vinculadas a reservas de salas.
-
