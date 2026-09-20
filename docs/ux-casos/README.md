@@ -11,6 +11,7 @@ usuario confirme que terminó de enviar la serie de casos.
 | --- | --- | --- |
 | Reserva de salas | [01-reserva-de-salas.md](01-reserva-de-salas.md) | Recibida, pendiente de implementación |
 | Reserva de dársenas | [02-reserva-de-darsenas.md](02-reserva-de-darsenas.md) | Recibida, pendiente de implementación |
+| Mis Gastos | [03-mis-gastos.md](03-mis-gastos.md) | Recibida, pendiente de implementación |
 
 ## Criterios generales
 
