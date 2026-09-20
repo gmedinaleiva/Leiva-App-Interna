@@ -176,12 +176,16 @@ void main() {
     await tester.ensureVisible(find.text('Mis gastos'));
     await tester.tap(find.text('Mis gastos'));
     await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).last, const Offset(0, -1400));
+    await tester.pumpAndSettle();
     expect(find.text('No tenés comprobantes cargados.'), findsOneWidget);
     expect(find.byKey(const Key('createExpenseButton')), findsOneWidget);
     await tester.tap(find.byKey(const Key('createExpenseButton')));
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).last, const Offset(0, -1200));
-    await tester.pumpAndSettle();
+    for (var page = 0; page < 5; page++) {
+      await tester.drag(find.byType(ListView).last, const Offset(0, -600));
+      await tester.pumpAndSettle();
+    }
     expect(find.byKey(const Key('cameraReceiptButton')), findsOneWidget);
   });
 }

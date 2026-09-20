@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,8 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
   bool _loading = true;
   String? _error;
   List<VehicleReservation> _reservations = const [];
+  List<VehicleOption> _vehicles = const [];
+  int _historyDays = 30;
 
   @override
   void initState() {
@@ -44,10 +47,20 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
       _error = null;
     });
     try {
-      final result = await widget.gateway.reservations();
+      final now = DateTime.now();
+      final result = await Future.wait<dynamic>([
+        widget.gateway.reservations(),
+        widget.gateway.available(
+          from: now,
+          to: now.add(const Duration(hours: 1)),
+        ),
+      ]);
       if (!mounted) return;
       setState(() {
-        _reservations = result;
+        _reservations = List<VehicleReservation>.of(
+          result[0] as List<VehicleReservation>,
+        );
+        _vehicles = List<VehicleOption>.of(result[1] as List<VehicleOption>);
         _loading = false;
       });
     } catch (error) {
@@ -166,11 +179,6 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
   Widget _body() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) return _MessageList(message: _error!, onRetry: _load);
-    if (_reservations.isEmpty) {
-      return const _MessageList(
-        message: 'Todavía no tenés reservas de vehículos.',
-      );
-    }
     final active = _reservations
         .where((row) => row.status.toLowerCase() == 'en_uso')
         .toList();
@@ -186,16 +194,174 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
         .toList();
     final history = _reservations
         .where((row) => !active.contains(row) && !upcoming.contains(row))
+        .where(
+          (row) => row.startsAt.isAfter(
+            DateTime.now().subtract(Duration(days: _historyDays)),
+          ),
+        )
         .toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 100),
       children: [
+        const _MobilityHero(),
+        const SizedBox(height: 14),
+        _MobilityKpis(
+          vehicleCount: _vehicles.length,
+          activeCount: active.length + upcoming.length,
+          historyCount: _reservations.length - active.length - upcoming.length,
+          onVehicles: () => _showVehicles(_vehicles),
+          onActive: () => _showReservations('Mis reservas activas', [
+            ...active,
+            ...upcoming,
+          ]),
+          onHistory: () => _showReservations(
+            'Historial de reservas',
+            _reservations
+                .where(
+                  (row) => !active.contains(row) && !upcoming.contains(row),
+                )
+                .toList(),
+          ),
+          onAgenda: () => _showAgendaUnavailable(false),
+          onAgendaHistory: () => _showAgendaUnavailable(true),
+        ),
+        const SizedBox(height: 16),
+        if (_reservations.isEmpty) const _SmallMobilityEmpty(),
         ..._section('En curso', active),
         ..._section('Próximos', upcoming),
-        ..._section('Historial', history),
+        if (history.isNotEmpty || _reservations.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(2, 10, 2, 8),
+            child: Text(
+              'Viajes recientes',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(value: 7, label: Text('7 días')),
+                ButtonSegment(value: 30, label: Text('30 días')),
+                ButtonSegment(value: 90, label: Text('90 días')),
+                ButtonSegment(value: 365, label: Text('1 año')),
+              ],
+              selected: {_historyDays},
+              onSelectionChanged: (value) =>
+                  setState(() => _historyDays = value.first),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._section('', history),
+        ],
       ],
     );
   }
+
+  Future<void> _showVehicles(List<VehicleOption> rows) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (context) => _MobilitySheet(
+          title: 'Vehículos habilitados',
+          children: rows.isEmpty
+              ? const [Text('No hay vehículos habilitados para este período.')]
+              : rows
+                    .map(
+                      (row) => ListTile(
+                        leading: const Icon(Icons.directions_car_outlined),
+                        title: Text(
+                          row.label,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(
+                          [
+                            row.brand,
+                            row.model,
+                            row.available
+                                ? 'Disponible'
+                                : row.unavailableReason,
+                          ].whereType<String>().join(' · '),
+                        ),
+                      ),
+                    )
+                    .toList(),
+        ),
+      );
+
+  Future<void> _showReservations(
+    String title,
+    List<VehicleReservation> rows,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) => _MobilitySheet(
+      title: title,
+      children: rows.isEmpty
+          ? const [Text('No hay datos para mostrar.')]
+          : rows
+                .map(
+                  (row) => ListTile(
+                    leading: const Icon(Icons.route_outlined),
+                    title: Text(
+                      row.vehicle?.label ?? 'Vehículo',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      '${row.destination ?? row.purpose ?? 'Sin destino'}\n${_dt(row.startsAt)} — ${_time(row.endsAt)}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(this.context).push(
+                        MaterialPageRoute(
+                          builder: (_) => VehicleTripScreen(
+                            gateway: widget.gateway,
+                            reservation: row,
+                            parkingGateway: widget.parkingGateway,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                )
+                .toList(),
+    ),
+  );
+
+  Future<void> _showAgendaUnavailable(bool history) =>
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                history ? Icons.history_rounded : Icons.event_note_rounded,
+                size: 44,
+                color: const Color(0xFF9B3139),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                history ? 'Historial de agenda' : 'Mi agenda activa',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'El portal todavía debe publicar la agenda gerencial en /api/app/v1. La app no mezcla este dato con el historial de viajes.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
 
   List<Widget> _section(String title, List<VehicleReservation> rows) {
     if (rows.isEmpty) return const [];
@@ -304,6 +470,211 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
       ),
     ];
   }
+}
+
+class _MobilityHero extends StatelessWidget {
+  const _MobilityHero();
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF8E2630), Color(0xFFC65F54)],
+      ),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'GEOSAT · AUTOGESTIÓN',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Mi movilidad',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        SizedBox(height: 5),
+        Text(
+          'Reservá vehículos habilitados y consultá tu agenda, viajes, eventos y trayectorias.',
+          style: TextStyle(color: Colors.white, height: 1.35),
+        ),
+      ],
+    ),
+  );
+}
+
+class _MobilityKpis extends StatelessWidget {
+  const _MobilityKpis({
+    required this.vehicleCount,
+    required this.activeCount,
+    required this.historyCount,
+    required this.onVehicles,
+    required this.onActive,
+    required this.onHistory,
+    required this.onAgenda,
+    required this.onAgendaHistory,
+  });
+  final int vehicleCount;
+  final int activeCount;
+  final int historyCount;
+  final VoidCallback onVehicles;
+  final VoidCallback onActive;
+  final VoidCallback onHistory;
+  final VoidCallback onAgenda;
+  final VoidCallback onAgendaHistory;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 112,
+    child: ListView(
+      scrollDirection: Axis.horizontal,
+      children: [
+        _MobilityKpi(
+          label: 'Vehículos habilitados',
+          value: vehicleCount,
+          icon: Icons.directions_car_outlined,
+          onTap: onVehicles,
+        ),
+        _MobilityKpi(
+          label: 'Reservas activas',
+          value: activeCount,
+          icon: Icons.event_available_outlined,
+          onTap: onActive,
+        ),
+        _MobilityKpi(
+          label: 'Historial de reservas',
+          value: historyCount,
+          icon: Icons.history_rounded,
+          onTap: onHistory,
+        ),
+        _MobilityKpi(
+          label: 'Mi agenda activa',
+          value: 0,
+          icon: Icons.event_note_rounded,
+          onTap: onAgenda,
+        ),
+        _MobilityKpi(
+          label: 'Historial de agenda',
+          value: 0,
+          icon: Icons.calendar_month_outlined,
+          onTap: onAgendaHistory,
+        ),
+      ],
+    ),
+  );
+}
+
+class _MobilityKpi extends StatelessWidget {
+  const _MobilityKpi({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.onTap,
+  });
+  final String label;
+  final int value;
+  final IconData icon;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(right: 10),
+    child: SizedBox(
+      width: 148,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(15),
+          child: Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFD8E1EA)),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, size: 20, color: const Color(0xFF9B3139)),
+                const Spacer(),
+                Text(
+                  '$value',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF667085),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _MobilitySheet extends StatelessWidget {
+  const _MobilitySheet({required this.title, required this.children});
+  final String title;
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.65,
+      maxChildSize: 0.92,
+      minChildSize: 0.35,
+      builder: (context, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    ),
+  );
+}
+
+class _SmallMobilityEmpty extends StatelessWidget {
+  const _SmallMobilityEmpty();
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE3E8EF)),
+    ),
+    child: const Text(
+      'Todavía no tenés reservas de vehículos.',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: Color(0xFF667085)),
+    ),
+  );
 }
 
 class VehicleTripScreen extends StatefulWidget {
@@ -563,7 +934,11 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
               child: SizedBox(
                 height: 280,
                 width: double.infinity,
-                child: _TrajectoryMap(points: trip.points, live: _isLive),
+                child: _TrajectoryMap(
+                  points: trip.points,
+                  events: trip.events,
+                  live: _isLive,
+                ),
               ),
             ),
           ),
@@ -916,80 +1291,336 @@ class _VehicleNoticeDetailScreenState extends State<VehicleNoticeDetailScreen> {
   }
 }
 
-class _TrajectoryMap extends StatelessWidget {
-  const _TrajectoryMap({required this.points, required this.live});
+class _TrajectoryMap extends StatefulWidget {
+  const _TrajectoryMap({
+    required this.points,
+    required this.events,
+    required this.live,
+    this.fullscreen = false,
+  });
   final List<VehicleTripPoint> points;
+  final List<VehicleTripEvent> events;
   final bool live;
+  final bool fullscreen;
+
+  @override
+  State<_TrajectoryMap> createState() => _TrajectoryMapState();
+}
+
+class _TrajectoryMapState extends State<_TrajectoryMap> {
+  final MapController _controller = MapController();
+
+  List<LatLng> get _coordinates => widget.points
+      .map((point) => LatLng(point.latitude, point.longitude))
+      .toList(growable: false);
+
+  void _fitRoute() {
+    final coordinates = _coordinates;
+    if (coordinates.length < 2) return;
+    _controller.fitCamera(
+      CameraFit.coordinates(
+        coordinates: coordinates,
+        padding: const EdgeInsets.all(44),
+        maxZoom: 17,
+      ),
+    );
+  }
+
+  Future<void> _openFullscreen() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _FullTrajectoryScreen(
+          points: widget.points,
+          events: widget.events,
+          live: widget.live,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final coordinates = points
-        .map((point) => LatLng(point.latitude, point.longitude))
-        .toList(growable: false);
+    final coordinates = _coordinates;
     final first = coordinates.first;
     final last = coordinates.last;
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: first,
-        initialZoom: 15,
-        initialCameraFit: coordinates.length > 1
-            ? CameraFit.coordinates(
-                coordinates: coordinates,
-                padding: const EdgeInsets.all(34),
-                maxZoom: 17,
-              )
-            : null,
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.leivahermanos.leiva_app_interna',
-          maxNativeZoom: 19,
-        ),
-        if (coordinates.length > 1)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: coordinates,
-                color: const Color(0xFF2563EB),
-                strokeWidth: 5,
-              ),
-            ],
-          ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: first,
-              width: 38,
-              height: 38,
-              child: const _MapMarker(
-                icon: Icons.trip_origin_rounded,
-                color: Color(0xFF059669),
+    final eventMarkers = widget.events
+        .where((event) => event.hasPosition)
+        .map(
+          (event) => Marker(
+            point: LatLng(event.latitude!, event.longitude!),
+            width: 42,
+            height: 42,
+            child: GestureDetector(
+              onTap: () => _showEvent(context, event),
+              child: _MapMarker(
+                icon: _eventIcon(event.kind),
+                color: _eventColor(event.kind),
               ),
             ),
-            if (coordinates.length > 1)
-              Marker(
-                point: last,
-                width: 42,
-                height: 42,
-                child: _MapMarker(
-                  icon: live
-                      ? Icons.directions_car_rounded
-                      : Icons.location_on_rounded,
-                  color: live
-                      ? const Color(0xFFE11D25)
-                      : const Color(0xFF7C3AED),
-                ),
+          ),
+        );
+    final directionMarkers = <Marker>[];
+    if (coordinates.length > 2) {
+      final step = math.max(1, coordinates.length ~/ 10);
+      for (var index = step; index < coordinates.length; index += step) {
+        final previous = coordinates[index - 1];
+        final current = coordinates[index];
+        directionMarkers.add(
+          Marker(
+            point: current,
+            width: 24,
+            height: 24,
+            child: Transform.rotate(
+              angle: _bearingRadians(previous, current),
+              child: const Icon(
+                Icons.navigation_rounded,
+                size: 20,
+                color: Color(0xFF1D4ED8),
               ),
+            ),
+          ),
+        );
+      }
+    }
+    return Stack(
+      children: [
+        FlutterMap(
+          mapController: _controller,
+          options: MapOptions(
+            initialCenter: first,
+            initialZoom: 15,
+            initialCameraFit: coordinates.length > 1
+                ? CameraFit.coordinates(
+                    coordinates: coordinates,
+                    padding: const EdgeInsets.all(34),
+                    maxZoom: 17,
+                  )
+                : null,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.leivahermanos.leiva_app_interna',
+              maxNativeZoom: 19,
+            ),
+            if (coordinates.length > 1)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: coordinates,
+                    color: const Color(0xFF2563EB),
+                    strokeWidth: 5,
+                  ),
+                ],
+              ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: first,
+                  width: 38,
+                  height: 38,
+                  child: const _MapMarker(
+                    icon: Icons.trip_origin_rounded,
+                    color: Color(0xFF059669),
+                  ),
+                ),
+                if (coordinates.length > 1)
+                  Marker(
+                    point: last,
+                    width: 42,
+                    height: 42,
+                    child: _MapMarker(
+                      icon: widget.live
+                          ? Icons.directions_car_rounded
+                          : Icons.location_on_rounded,
+                      color: widget.live
+                          ? const Color(0xFFE11D25)
+                          : const Color(0xFF7C3AED),
+                    ),
+                  ),
+                ...eventMarkers,
+                ...directionMarkers,
+              ],
+            ),
+            const RichAttributionWidget(
+              showFlutterMapAttribution: false,
+              attributions: [
+                TextSourceAttribution('OpenStreetMap contributors'),
+              ],
+            ),
           ],
         ),
-        const RichAttributionWidget(
-          showFlutterMapAttribution: false,
-          attributions: [TextSourceAttribution('OpenStreetMap contributors')],
+        Positioned(
+          top: 10,
+          right: 10,
+          child: Column(
+            children: [
+              _MapControlButton(
+                tooltip: 'Encuadrar recorrido',
+                icon: Icons.center_focus_strong_rounded,
+                onTap: _fitRoute,
+              ),
+              if (!widget.fullscreen) ...[
+                const SizedBox(height: 8),
+                _MapControlButton(
+                  tooltip: 'Pantalla completa',
+                  icon: Icons.fullscreen_rounded,
+                  onTap: _openFullscreen,
+                ),
+              ],
+            ],
+          ),
+        ),
+        Positioned(
+          left: 10,
+          right: 10,
+          bottom: 10,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Wrap(
+                spacing: 12,
+                children: [
+                  _MapLegendDot(color: Color(0xFF059669), text: 'Inicio'),
+                  _MapLegendDot(
+                    color: Color(0xFF7C3AED),
+                    text: 'Última posición',
+                  ),
+                  _MapLegendDot(color: Color(0xFFDC2626), text: 'Evento'),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
   }
+}
+
+class _FullTrajectoryScreen extends StatelessWidget {
+  const _FullTrajectoryScreen({
+    required this.points,
+    required this.events,
+    required this.live,
+  });
+  final List<VehicleTripPoint> points;
+  final List<VehicleTripEvent> events;
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Trayectoria completa')),
+    body: SafeArea(
+      child: _TrajectoryMap(
+        points: points,
+        events: events,
+        live: live,
+        fullscreen: true,
+      ),
+    ),
+  );
+}
+
+class _MapControlButton extends StatelessWidget {
+  const _MapControlButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    elevation: 3,
+    borderRadius: BorderRadius.circular(10),
+    child: IconButton(tooltip: tooltip, onPressed: onTap, icon: Icon(icon)),
+  );
+}
+
+class _MapLegendDot extends StatelessWidget {
+  const _MapLegendDot({required this.color, required this.text});
+  final Color color;
+  final String text;
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 4),
+      Text(
+        text,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+      ),
+    ],
+  );
+}
+
+double _bearingRadians(LatLng from, LatLng to) {
+  final lat1 = from.latitudeInRad;
+  final lat2 = to.latitudeInRad;
+  final delta = (to.longitude - from.longitude) * math.pi / 180;
+  final y = math.sin(delta) * math.cos(lat2);
+  final x =
+      math.cos(lat1) * math.sin(lat2) -
+      math.sin(lat1) * math.cos(lat2) * math.cos(delta);
+  return math.atan2(y, x);
+}
+
+IconData _eventIcon(String kind) => switch (kind) {
+  'stop' || 'detention' => Icons.pause_circle_filled_rounded,
+  'speed_camera' || 'speed_camera_estimate' => Icons.radar_rounded,
+  'fine' => Icons.gavel_rounded,
+  _ => Icons.warning_rounded,
+};
+
+Color _eventColor(String kind) => switch (kind) {
+  'stop' || 'detention' => const Color(0xFFD18A00),
+  'speed_camera' || 'speed_camera_estimate' => const Color(0xFF7C3AED),
+  _ => const Color(0xFFDC2626),
+};
+
+void _showEvent(BuildContext context, VehicleTripEvent event) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              event.label,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            if (event.at != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                _dt(event.at!),
+                style: const TextStyle(color: Color(0xFF667085)),
+              ),
+            ],
+            if (event.detail?.isNotEmpty == true) ...[
+              const SizedBox(height: 12),
+              Text(event.detail!, style: const TextStyle(height: 1.4)),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _MapMarker extends StatelessWidget {

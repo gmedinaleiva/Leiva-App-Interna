@@ -67,7 +67,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     }
   }
 
-  Future<void> _upload() async {
+  Future<void> _upload({String? section}) async {
     if (_dashboard == null || _rubrics == null) return;
     var trips = const <VehicleReservation>[];
     if (widget.vehiclesGateway != null) {
@@ -86,6 +86,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           dashboard: _dashboard!,
           rubrics: _rubrics!,
           vehicleReservations: trips,
+          initialSection: section,
         ),
       ),
     );
@@ -225,7 +226,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     floatingActionButton: widget.canUpload && _dashboard != null
         ? FloatingActionButton.extended(
             key: const Key('createExpenseButton'),
-            onPressed: _upload,
+            onPressed: () => _upload(),
             backgroundColor: const Color(0xFFEA580C),
             foregroundColor: Colors.white,
             icon: const Icon(Icons.add_rounded),
@@ -244,6 +245,25 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 100),
       children: [
+        const _ExpensesHero(),
+        const SizedBox(height: 14),
+        _ExpenseBalanceSummary(
+          periods: data.periods,
+          canCreateAdvance: data.allows('advances'),
+          onCreateAdvance: _createAdvance,
+        ),
+        const SizedBox(height: 14),
+        _ExpenseProfileCard(profile: data.profile),
+        const SizedBox(height: 14),
+        _ExpenseNavigation(
+          onTravel: data.allows('travel')
+              ? () => _upload(section: 'travel')
+              : null,
+          onBenefits: () => _upload(section: 'benefits'),
+          onAdvances: data.allows('advances') ? _createAdvance : null,
+          onReports: data.periods.isNotEmpty ? _openReport : null,
+        ),
+        const SizedBox(height: 20),
         if (data.alerts.isNotEmpty) ...[
           Container(
             padding: const EdgeInsets.all(16),
@@ -349,6 +369,333 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     );
   }
 }
+
+class _ExpensesHero extends StatelessWidget {
+  const _ExpensesHero();
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF8E2630), Color(0xFFC65F54)],
+      ),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'AUTOGESTIÓN PERSONAL',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Mis gastos',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        SizedBox(height: 5),
+        Text(
+          'Consultá saldos, cargá comprobantes y seguí aprobaciones y reintegros.',
+          style: TextStyle(color: Colors.white, height: 1.35),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ExpenseBalanceSummary extends StatelessWidget {
+  const _ExpenseBalanceSummary({
+    required this.periods,
+    required this.canCreateAdvance,
+    required this.onCreateAdvance,
+  });
+  final List<ExpensePeriod> periods;
+  final bool canCreateAdvance;
+  final VoidCallback onCreateAdvance;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = periods
+        .where(
+          (period) => {
+            'open',
+            'observed',
+            'partially_observed',
+            'partially_approved',
+          }.contains(period.statusCode),
+        )
+        .toList();
+    final available = active.fold<double>(
+      0,
+      (sum, period) => sum + (period.availableAmount ?? 0),
+    );
+    final consumed = active.fold<double>(
+      0,
+      (sum, period) => sum + (period.consumedAmount ?? 0),
+    );
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD8E1EA)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _ExpenseMetric(
+                  label: 'Saldo vigente',
+                  value: active.isEmpty
+                      ? 'Sin saldo'
+                      : '\$ ${_balanceAmount(available)}',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ExpenseMetric(
+                  label: 'Consumido',
+                  value: '\$ ${_balanceAmount(consumed)}',
+                ),
+              ),
+            ],
+          ),
+          if (canCreateAdvance) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onCreateAdvance,
+                icon: const Icon(Icons.account_balance_wallet_outlined),
+                label: const Text('Registrar adelanto'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpenseMetric extends StatelessWidget {
+  const _ExpenseMetric({required this.label, required this.value});
+  final String label;
+  final String value;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 10,
+          color: Color(0xFF667085),
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 5),
+      Text(
+        value,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+      ),
+    ],
+  );
+}
+
+class _ExpenseProfileCard extends StatelessWidget {
+  const _ExpenseProfileCard({required this.profile});
+  final ExpenseProfile profile;
+  @override
+  Widget build(BuildContext context) {
+    final fields = <(String, String?)>[
+      ('Nombre', profile.firstName),
+      ('Apellido', profile.lastName),
+      ('Mail institucional', profile.institutionalEmail),
+      ('Legajo', profile.employeeNumber),
+      ('Razón social', profile.legalEntity),
+      ('Sucursal', profile.branch),
+      ('Departamento', profile.department),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD8E1EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Estos datos se usarán en tus gastos',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                ),
+              ),
+              Chip(label: Text('SOLO LECTURA', style: TextStyle(fontSize: 9))),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...fields.map(
+            (field) => Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 122,
+                    child: Text(
+                      field.$1,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF667085),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      field.$2?.isNotEmpty == true ? field.$2! : 'Pendiente',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: field.$2?.isNotEmpty == true
+                            ? const Color(0xFF101828)
+                            : const Color(0xFFB54708),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 5),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: profile.isComplete
+                  ? const Color(0xFFECFDF3)
+                  : const Color(0xFFFFFAEB),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              profile.isComplete
+                  ? 'Tu perfil está completo. La asignación se aplicará automáticamente.'
+                  : 'Faltan datos: ${profile.missingFields.join(', ')}.',
+              style: TextStyle(
+                color: profile.isComplete
+                    ? const Color(0xFF067647)
+                    : const Color(0xFFB54708),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpenseNavigation extends StatelessWidget {
+  const _ExpenseNavigation({
+    required this.onTravel,
+    required this.onBenefits,
+    required this.onAdvances,
+    required this.onReports,
+  });
+  final VoidCallback? onTravel;
+  final VoidCallback? onBenefits;
+  final VoidCallback? onAdvances;
+  final VoidCallback? onReports;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Tu bitácora personal de gastos',
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 10),
+      GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        childAspectRatio: 1.35,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        children: [
+          _ExpenseNavTile(
+            title: 'Viáticos',
+            icon: Icons.luggage_outlined,
+            onTap: onTravel,
+          ),
+          _ExpenseNavTile(
+            title: 'Beneficios',
+            icon: Icons.card_giftcard_outlined,
+            onTap: onBenefits,
+          ),
+          _ExpenseNavTile(
+            title: 'Adelantos',
+            icon: Icons.account_balance_wallet_outlined,
+            onTap: onAdvances,
+          ),
+          _ExpenseNavTile(
+            title: 'Rendiciones',
+            icon: Icons.receipt_long_outlined,
+            onTap: onReports,
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+class _ExpenseNavTile extends StatelessWidget {
+  const _ExpenseNavTile({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+  });
+  final String title;
+  final IconData icon;
+  final VoidCallback? onTap;
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(14),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFD8E1EA)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: const Color(0xFF9B3139)),
+            const Spacer(),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+String _balanceAmount(double value) =>
+    value.toStringAsFixed(2).replaceAll('.', ',');
 
 class ExpenseReportScreen extends StatefulWidget {
   const ExpenseReportScreen({
@@ -815,12 +1162,14 @@ class CreateExpenseScreen extends StatefulWidget {
     required this.dashboard,
     required this.rubrics,
     required this.vehicleReservations,
+    this.initialSection,
     super.key,
   });
   final ExpensesGateway gateway;
   final ExpenseDashboard dashboard;
   final ExpenseRubrics rubrics;
   final List<VehicleReservation> vehicleReservations;
+  final String? initialSection;
 
   @override
   State<CreateExpenseScreen> createState() => _CreateExpenseScreenState();
@@ -838,12 +1187,15 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _fuelPlate = TextEditingController();
   final _fuelProvince = TextEditingController();
   final _fuelCity = TextEditingController();
+  final _benefitPeriod = TextEditingController();
   final _imagePicker = ImagePicker();
   late String _section;
   late DateTime _date;
   String? _rubric;
   int? _periodId;
   int? _geosatReservationId;
+  String _currency = 'ARS';
+  String _fiscalKind = 'unknown';
   XFile? _file;
   Uint8List? _fileBytes;
   bool _saving = false;
@@ -871,7 +1223,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   @override
   void initState() {
     super.initState();
-    _section = _travelAllowed ? 'travel' : 'benefits';
+    _section = widget.initialSection == 'benefits'
+        ? 'benefits'
+        : _travelAllowed
+        ? 'travel'
+        : 'benefits';
     _date = DateTime.now();
     _rubric = _currentRubrics.firstOrNull;
     _periodId = _travelPeriods.firstOrNull?.id;
@@ -889,6 +1245,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     _fuelPlate.dispose();
     _fuelProvince.dispose();
     _fuelCity.dispose();
+    _benefitPeriod.dispose();
     super.dispose();
   }
 
@@ -1018,6 +1375,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           geosatReservationId: _section == 'travel'
               ? _geosatReservationId
               : null,
+          currency: _currency,
+          fiscalKind: _fiscalKind,
+          benefitPeriod: _section == 'benefits'
+              ? _expenseNullable(_benefitPeriod.text)
+              : null,
         ),
       );
       if (!mounted) return;
@@ -1084,6 +1446,23 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                 (double.tryParse((value ?? '').replaceAll(',', '.')) ?? 0) <= 0
                 ? 'Ingresá un importe válido'
                 : null,
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            initialValue: _currency,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Moneda'),
+            items: const [
+              DropdownMenuItem(
+                value: 'ARS',
+                child: Text('ARS · Peso argentino'),
+              ),
+              DropdownMenuItem(
+                value: 'USD',
+                child: Text('USD · Dólar estadounidense'),
+              ),
+            ],
+            onChanged: (value) => setState(() => _currency = value ?? 'ARS'),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -1155,6 +1534,17 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                 ? 'Indicá el beneficio utilizado'
                 : null,
           ),
+          if (_section == 'benefits') ...[
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _benefitPeriod,
+              maxLength: 80,
+              decoration: const InputDecoration(
+                labelText: 'Período del beneficio (opcional)',
+                hintText: 'Ej. Septiembre 2026',
+              ),
+            ),
+          ],
           if (_isFuel) ...[
             const SizedBox(height: 8),
             TextFormField(
@@ -1219,6 +1609,39 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             maxLength: 4000,
             decoration: const InputDecoration(
               labelText: 'Descripción (opcional)',
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Tipo de comprobante',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          RadioGroup<String>(
+            groupValue: _fiscalKind,
+            onChanged: (value) =>
+                setState(() => _fiscalKind = value ?? 'unknown'),
+            child: const Column(
+              children: [
+                RadioListTile<String>(
+                  value: 'unknown',
+                  title: Text('No estoy seguro'),
+                  subtitle: Text(
+                    'El portal revisará los datos fiscales del archivo.',
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                RadioListTile<String>(
+                  value: 'fiscal',
+                  title: Text('Es una factura fiscal'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                RadioListTile<String>(
+                  value: 'non_fiscal',
+                  title: Text('Es ticket o comprobante no fiscal'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),

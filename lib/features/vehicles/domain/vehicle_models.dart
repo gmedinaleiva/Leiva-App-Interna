@@ -255,6 +255,9 @@ class VehicleTripEvent {
     required this.label,
     this.detail,
     this.at,
+    this.latitude,
+    this.longitude,
+    this.raw = const {},
   });
 
   factory VehicleTripEvent.fromJson(Map<String, dynamic> json) =>
@@ -265,12 +268,21 @@ class VehicleTripEvent {
         at: json['at'] == null
             ? null
             : DateTime.tryParse(json['at'] as String)?.toLocal(),
+        latitude: (json['lat'] as num? ?? json['latitude'] as num?)?.toDouble(),
+        longitude: (json['lng'] as num? ?? json['longitude'] as num?)
+            ?.toDouble(),
+        raw: Map<String, dynamic>.unmodifiable(json),
       );
 
   final String kind;
   final String label;
   final String? detail;
   final DateTime? at;
+  final double? latitude;
+  final double? longitude;
+  final Map<String, dynamic> raw;
+
+  bool get hasPosition => latitude != null && longitude != null;
 
   bool get isConfirmedFine => kind == 'fine';
   bool get isPreventive => const {

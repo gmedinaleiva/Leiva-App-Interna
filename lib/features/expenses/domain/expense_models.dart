@@ -129,12 +129,16 @@ class ExpenseDashboard {
     required this.records,
     required this.alerts,
     required this.fines,
+    this.profile = const ExpenseProfile(),
   });
 
   factory ExpenseDashboard.fromJson(Map<String, dynamic> json) =>
       ExpenseDashboard(
         capabilities: Map<String, dynamic>.unmodifiable(
           json['capabilities'] as Map<String, dynamic>? ?? const {},
+        ),
+        profile: ExpenseProfile.fromJson(
+          json['profile'] as Map<String, dynamic>? ?? const {},
         ),
         periods: _maps(json['periods']).map(ExpensePeriod.fromJson).toList(),
         records: _maps(json['records']).map(ExpenseRecord.fromJson).toList(),
@@ -147,8 +151,45 @@ class ExpenseDashboard {
   final List<ExpenseRecord> records;
   final List<Map<String, dynamic>> alerts;
   final List<ExpenseFine> fines;
+  final ExpenseProfile profile;
 
   bool allows(String key) => capabilities[key] == true;
+}
+
+class ExpenseProfile {
+  const ExpenseProfile({
+    this.firstName,
+    this.lastName,
+    this.employeeNumber,
+    this.institutionalEmail,
+    this.legalEntity,
+    this.department,
+    this.branch,
+    this.missingFields = const [],
+    this.isComplete = false,
+  });
+
+  factory ExpenseProfile.fromJson(Map<String, dynamic> json) => ExpenseProfile(
+    firstName: json['first_name'] as String?,
+    lastName: json['last_name'] as String?,
+    employeeNumber: json['employee_number'] as String?,
+    institutionalEmail: json['institutional_email'] as String?,
+    legalEntity: json['legal_entity'] as String?,
+    department: json['department'] as String?,
+    branch: json['branch'] as String?,
+    missingFields: (json['missing_fields'] as List? ?? const []).cast<String>(),
+    isComplete: json['is_complete'] as bool? ?? false,
+  );
+
+  final String? firstName;
+  final String? lastName;
+  final String? employeeNumber;
+  final String? institutionalEmail;
+  final String? legalEntity;
+  final String? department;
+  final String? branch;
+  final List<String> missingFields;
+  final bool isComplete;
 }
 
 class ExpenseFine {
@@ -226,6 +267,9 @@ class ExpenseUploadDraft {
     this.fuelProvince,
     this.fuelCity,
     this.geosatReservationId,
+    this.currency = 'ARS',
+    this.fiscalKind = 'unknown',
+    this.benefitPeriod,
   });
 
   final String idempotencyKey;
@@ -247,6 +291,9 @@ class ExpenseUploadDraft {
   final String? fuelProvince;
   final String? fuelCity;
   final int? geosatReservationId;
+  final String currency;
+  final String fiscalKind;
+  final String? benefitPeriod;
 }
 
 class TravelAdvanceDraft {

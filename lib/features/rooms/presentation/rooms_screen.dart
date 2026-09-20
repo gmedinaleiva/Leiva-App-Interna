@@ -33,6 +33,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
   String? _error;
   List<RoomBranch> _branches = const [];
   List<RoomReservation> _reservations = const [];
+  bool _showHistory = false;
 
   @override
   void initState() {
@@ -93,11 +94,16 @@ class _RoomsScreenState extends State<RoomsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Cancelar reserva'),
-        content: Text('¿Querés cancelar “${reservation.title}”?'),
+        content: Text(
+          'Sala: ${reservation.room.name}\n'
+          'Sucursal: ${reservation.room.branchName ?? 'Sin informar'}\n'
+          'Horario: ${_formatDateTime(reservation.startsAt)} — ${_formatTime(reservation.endsAt)}\n\n'
+          'También se actualizarán las invitaciones y las dársenas vinculadas según las reglas del portal.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Volver'),
+            child: const Text('Conservar reserva'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
@@ -139,7 +145,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reservas de salas'),
+        title: const Text('Salas'),
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         actions: [
@@ -184,24 +190,74 @@ class _RoomsScreenState extends State<RoomsScreen> {
         ],
       );
     }
-    if (_reservations.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.all(24),
-        children: const [
-          _MessageCard(
-            icon: Icons.meeting_room_outlined,
-            title: 'Todavía no tenés reservas',
-            message: 'Creá una reserva para consultar salas disponibles.',
-          ),
-        ],
-      );
-    }
+    final now = DateTime.now();
+    final active = _reservations.where((row) {
+      final status = row.status.toLowerCase();
+      return row.endsAt.isAfter(now) &&
+          !{
+            'cancelled',
+            'canceled',
+            'completed',
+            'finalizada',
+          }.contains(status);
+    }).toList();
+    final history = _reservations
+        .where((row) => !active.contains(row))
+        .toList()
+        .reversed
+        .toList();
+    final visible = _showHistory ? history : active;
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 100),
-      itemCount: _reservations.length,
+      itemCount: visible.isEmpty ? 4 : visible.length + 3,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final reservation = _reservations[index];
+        if (index == 0) return _RoomsHero(activeCount: active.length);
+        if (index == 1) {
+          return OutlinedButton.icon(
+            onPressed: widget.canCreate && _branches.isNotEmpty
+                ? _create
+                : null,
+            icon: const Icon(Icons.search_rounded),
+            label: const Text('Consultar disponibilidad y reservar'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 15),
+            ),
+          );
+        }
+        if (index == 2) {
+          return SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(
+                value: false,
+                icon: const Icon(Icons.event_available_outlined),
+                label: Text('Próximas (${active.length})'),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: const Icon(Icons.history_rounded),
+                label: Text('Historial (${history.length})'),
+              ),
+            ],
+            selected: {_showHistory},
+            onSelectionChanged: (value) =>
+                setState(() => _showHistory = value.first),
+          );
+        }
+        if (visible.isEmpty) {
+          return _MessageCard(
+            icon: _showHistory
+                ? Icons.history_rounded
+                : Icons.meeting_room_outlined,
+            title: _showHistory
+                ? 'Sin historial reciente'
+                : 'Todavía no tenés reservas',
+            message: _showHistory
+                ? 'Las reservas finalizadas y canceladas aparecerán acá.'
+                : 'Consultá disponibilidad para crear una nueva reserva.',
+          );
+        }
+        final reservation = visible[index - 3];
         return _ReservationCard(
           reservation: reservation,
           onTap: () => _openDetail(reservation),
@@ -305,6 +361,21 @@ class _RoomReservationDetailScreenState
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => EditRoomReservationScreen(
+          gateway: widget.gateway,
+          reservation: row,
+        ),
+      ),
+    );
+    if (changed == true) await _load();
+  }
+
+  Future<void> _reprogram() async {
+    final row = _reservation;
+    if (row == null) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ReprogramRoomReservationScreen(
           gateway: widget.gateway,
           reservation: row,
         ),
@@ -454,6 +525,12 @@ class _RoomReservationDetailScreenState
                 ),
               ],
               if (_canEdit) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _reprogram,
+                  icon: const Icon(Icons.update_rounded),
+                  label: const Text('Reprogramar'),
+                ),
                 const SizedBox(height: 10),
                 FilledButton.icon(
                   onPressed: _edit,
@@ -712,6 +789,169 @@ class _VisitorParkingScreenState extends State<VisitorParkingScreen> {
             ),
     );
   }
+}
+
+class ReprogramRoomReservationScreen extends StatefulWidget {
+  const ReprogramRoomReservationScreen({
+    required this.gateway,
+    required this.reservation,
+    super.key,
+  });
+  final RoomsGateway gateway;
+  final RoomReservation reservation;
+
+  @override
+  State<ReprogramRoomReservationScreen> createState() =>
+      _ReprogramRoomReservationScreenState();
+}
+
+class _ReprogramRoomReservationScreenState
+    extends State<ReprogramRoomReservationScreen> {
+  late DateTime _from;
+  late DateTime _to;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _from = widget.reservation.startsAt;
+    _to = widget.reservation.endsAt;
+  }
+
+  Future<void> _pick(bool start) async {
+    final current = start ? _from : _to;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(current),
+    );
+    if (time == null) return;
+    final value = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    setState(() {
+      if (start) {
+        final duration = _to.difference(_from);
+        _from = value;
+        _to = value.add(
+          duration.isNegative || duration == Duration.zero
+              ? const Duration(hours: 1)
+              : duration,
+        );
+      } else {
+        _to = value;
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_to.isAfter(_from)) {
+      setState(
+        () =>
+            _error = 'El horario de finalización debe ser posterior al inicio.',
+      );
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final reservation = widget.reservation;
+      await widget.gateway.update(
+        reservation.id,
+        RoomReservationUpdate(
+          roomId: reservation.room.id,
+          title: reservation.title,
+          notes: reservation.notes,
+          startsAt: _from,
+          endsAt: _to,
+          internalParticipantIds: reservation.participants
+              .where((person) => !person.isExternal && person.userId != null)
+              .map((person) => person.userId!)
+              .toList(),
+          externalParticipants: reservation.participants
+              .where((person) => person.isExternal)
+              .map(
+                (person) => ExternalRoomParticipantDraft(
+                  type: person.externalType ?? 'visita',
+                  name: person.name,
+                  organization: person.organization,
+                  email: person.email,
+                ),
+              )
+              .toList(),
+        ),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _messageFor(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Reprogramar reserva')),
+    body: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFEDEE),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '${widget.reservation.room.name} · ${widget.reservation.room.branchName ?? 'Sucursal'}',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(height: 18),
+        _DateTimeButton(
+          label: 'Desde (Argentina)',
+          value: _from,
+          onTap: () => _pick(true),
+        ),
+        const SizedBox(height: 12),
+        _DateTimeButton(
+          label: 'Hasta (Argentina)',
+          value: _to,
+          onTap: () => _pick(false),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
+        ],
+        const SizedBox(height: 20),
+        FilledButton.icon(
+          onPressed: _saving ? null : _submit,
+          icon: _saving
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.update_rounded),
+          label: Text(_saving ? 'Reprogramando...' : 'Confirmar nuevo horario'),
+        ),
+      ],
+    ),
+  );
 }
 
 class EditRoomReservationScreen extends StatefulWidget {
@@ -1347,6 +1587,7 @@ class _CreateRoomReservationScreenState
   int? _roomId;
   final List<RoomParticipantOption> _internalParticipants = [];
   final List<ExternalRoomParticipantDraft> _externalParticipants = [];
+  bool _coordinateParking = false;
 
   @override
   void initState() {
@@ -1431,7 +1672,7 @@ class _CreateRoomReservationScreenState
       _error = null;
     });
     try {
-      await widget.gateway.create(
+      final created = await widget.gateway.create(
         RoomReservationDraft(
           idempotencyKey: _idempotencyKey,
           roomId: _roomId!,
@@ -1448,6 +1689,18 @@ class _CreateRoomReservationScreenState
         ),
       );
       if (!mounted) return;
+      if (_coordinateParking && _externalParticipants.isNotEmpty) {
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => VisitorParkingScreen(
+              gateway: widget.gateway,
+              reservationId: created.id,
+            ),
+          ),
+        );
+        if (!mounted) return;
+      }
       Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
@@ -1560,6 +1813,22 @@ class _CreateRoomReservationScreenState
               externalParticipants: _externalParticipants,
               onChanged: () => setState(() {}),
             ),
+            if (_externalParticipants.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                value: _coordinateParking,
+                onChanged: _saving
+                    ? null
+                    : (value) =>
+                          setState(() => _coordinateParking = value ?? false),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Elegir dársena para las personas externas'),
+                subtitle: const Text(
+                  'La solicitud quedará pendiente de autorización de Recepción o Guardia.',
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             TextFormField(
               controller: _notesController,
@@ -1733,6 +2002,79 @@ class _DateTimeButton extends StatelessWidget {
         Text(label, style: const TextStyle(fontSize: 11)),
         const SizedBox(height: 3),
         Text(_formatDateTime(value), maxLines: 1),
+      ],
+    ),
+  );
+}
+
+class _RoomsHero extends StatelessWidget {
+  const _RoomsHero({required this.activeCount});
+  final int activeCount;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF8E2630), Color(0xFFC65F54)],
+      ),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Row(
+      children: [
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'OPERACIÓN INTERNA · AGENDA EDILICIA',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Reservas de salas',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 5),
+              Text(
+                'Consultá disponibilidad y gestioná tus reuniones activas.',
+                style: TextStyle(color: Colors.white, height: 1.35),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: Colors.white38),
+          ),
+          child: Column(
+            children: [
+              Text(
+                '$activeCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Text(
+                'próximas',
+                style: TextStyle(color: Colors.white70, fontSize: 10),
+              ),
+            ],
+          ),
+        ),
       ],
     ),
   );

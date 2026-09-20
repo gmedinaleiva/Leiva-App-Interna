@@ -26,6 +26,7 @@ class _ParkingScreenState extends State<ParkingScreen> {
   String? _error;
   List<ParkingRequest> _requests = const [];
   List<ParkingBranch> _branches = const [];
+  bool _showHistory = false;
 
   @override
   void initState() {
@@ -73,6 +74,7 @@ class _ParkingScreenState extends State<ParkingScreen> {
         builder: (_) => CreateParkingRequestScreen(
           gateway: widget.gateway,
           branches: _branches,
+          requests: _requests,
         ),
       ),
     );
@@ -144,17 +146,59 @@ class _ParkingScreenState extends State<ParkingScreen> {
     if (_error != null) {
       return _ParkingMessage(message: _error!, onRetry: _load);
     }
-    if (_requests.isEmpty) {
-      return const _ParkingMessage(
-        message: 'Todavía no tenés solicitudes de estacionamiento.',
-      );
-    }
+    final active = _requests.where(_isActiveParkingRequest).toList();
+    final history = _requests
+        .where((row) => !_isActiveParkingRequest(row))
+        .toList();
+    final visible = _showHistory ? history : active;
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 100),
-      itemCount: _requests.length,
+      itemCount: visible.isEmpty ? 4 : visible.length + 3,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final row = _requests[index];
+        if (index == 0) {
+          return const _ParkingHero();
+        }
+        if (index == 1) {
+          return FilledButton.icon(
+            key: const Key('openParkingAvailabilityButton'),
+            onPressed: widget.canCreate && _branches.isNotEmpty
+                ? _create
+                : null,
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Consultar disponibilidad y plano'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          );
+        }
+        if (index == 2) {
+          return SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(
+                value: false,
+                icon: const Icon(Icons.schedule_rounded),
+                label: Text('Activas (${active.length})'),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: const Icon(Icons.history_rounded),
+                label: Text('Historial (${history.length})'),
+              ),
+            ],
+            selected: {_showHistory},
+            onSelectionChanged: (value) =>
+                setState(() => _showHistory = value.first),
+          );
+        }
+        if (visible.isEmpty) {
+          return _ParkingEmpty(
+            message: _showHistory
+                ? 'Todavía no hay solicitudes finalizadas o canceladas.'
+                : 'Todavía no tenés solicitudes de estacionamiento.',
+          );
+        }
+        final row = visible[index - 3];
         return Card(
           margin: EdgeInsets.zero,
           elevation: 0,
@@ -242,10 +286,12 @@ class CreateParkingRequestScreen extends StatefulWidget {
   const CreateParkingRequestScreen({
     required this.gateway,
     required this.branches,
+    this.requests = const [],
     super.key,
   });
   final ParkingGateway gateway;
   final List<ParkingBranch> branches;
+  final List<ParkingRequest> requests;
 
   @override
   State<CreateParkingRequestScreen> createState() =>
@@ -481,15 +527,36 @@ class _CreateParkingRequestScreenState
               ),
             if (!_checking && _bays.isNotEmpty) ...[
               const SizedBox(height: 18),
-              const Text(
-                'Plano lógico',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Plano de dársenas',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Ver plano en pantalla completa',
+                    onPressed: _openFullPlan,
+                    icon: const Icon(Icons.fullscreen_rounded),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _bays.map((bay) => _ParkingBayTile(bay)).toList(),
+              _ParkingLegend(requests: widget.requests),
+              const SizedBox(height: 12),
+              _ParkingPlan(
+                bays: _bays,
+                requests: widget.requests,
+                from: _from,
+                to: _to,
+                selectedBayId: _bayId,
+                onSelect: (bay) {
+                  if (bay.available) setState(() => _bayId = bay.id);
+                },
               ),
             ],
             const SizedBox(height: 16),
@@ -533,47 +600,462 @@ class _CreateParkingRequestScreenState
       ),
     );
   }
+
+  Future<void> _openFullPlan() async {
+    final selected = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _ParkingFullPlanScreen(
+          bays: _bays,
+          requests: widget.requests,
+          from: _from,
+          to: _to,
+          selectedBayId: _bayId,
+        ),
+      ),
+    );
+    if (selected != null && mounted) setState(() => _bayId = selected);
+  }
 }
 
 class _ParkingBayTile extends StatelessWidget {
-  const _ParkingBayTile(this.bay);
+  const _ParkingBayTile(
+    this.bay, {
+    required this.state,
+    required this.selected,
+    required this.onTap,
+  });
   final ParkingBay bay;
+  final _ParkingVisualState state;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final label = switch (bay.unavailableReason) {
-      'reserved' => 'Reservada',
-      'blocked' => 'Bloqueada',
-      'institutional' => 'Institucional',
-      'vehicle_type' => 'Incompatible',
-      _ => 'Disponible',
-    };
-    final color = bay.available
-        ? const Color(0xFF067647)
-        : const Color(0xFF667085);
-    return Container(
-      width: 142,
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+    final color = state.color;
+    return Semantics(
+      button: bay.available,
+      selected: selected,
+      label: '${bay.name}, ${state.label}',
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 92,
+          height: 150,
+          padding: const EdgeInsets.fromLTRB(7, 8, 7, 7),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color, width: selected ? 3 : 1.5),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.2),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            children: [
+              Text(
+                bay.name,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Expanded(
+                child: ColorFiltered(
+                  colorFilter: ColorFilter.mode(color, BlendMode.modulate),
+                  child: Image.asset(
+                    'assets/parking/vehicle-topdown-neutral.png',
+                    fit: BoxFit.contain,
+                    semanticLabel: 'Auto visto desde arriba',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                state.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _ParkingVisualState {
+  available('Disponible', Color(0xFF15803D)),
+  pending('Pendiente', Color(0xFFD18A00)),
+  reserved('Reservada', Color(0xFFDC2626)),
+  institutional('Institucional', Color(0xFF64748B)),
+  incompatible('No compatible', Color(0xFF64748B));
+
+  const _ParkingVisualState(this.label, this.color);
+  final String label;
+  final Color color;
+}
+
+_ParkingVisualState _visualState(
+  ParkingBay bay,
+  List<ParkingRequest> requests,
+  DateTime from,
+  DateTime to,
+) {
+  final own = requests.where(
+    (row) =>
+        row.bay?.id == bay.id &&
+        row.startsAt.isBefore(to) &&
+        row.endsAt.isAfter(from) &&
+        _isActiveParkingRequest(row),
+  );
+  if (own.any(
+    (row) => {'pendiente', 'pending'}.contains(row.status.toLowerCase()),
+  )) {
+    return _ParkingVisualState.pending;
+  }
+  if (own.isNotEmpty ||
+      bay.unavailableReason == 'reserved' ||
+      bay.unavailableReason == 'blocked') {
+    return _ParkingVisualState.reserved;
+  }
+  if (bay.unavailableReason == 'institutional') {
+    return _ParkingVisualState.institutional;
+  }
+  if (bay.unavailableReason == 'vehicle_type') {
+    return _ParkingVisualState.incompatible;
+  }
+  return _ParkingVisualState.available;
+}
+
+bool _isActiveParkingRequest(ParkingRequest row) => const {
+  'pendiente',
+  'pending',
+  'aprobada',
+  'approved',
+  'en_uso',
+  'in_use',
+}.contains(row.status.toLowerCase());
+
+class _ParkingPlan extends StatelessWidget {
+  const _ParkingPlan({
+    required this.bays,
+    required this.requests,
+    required this.from,
+    required this.to,
+    required this.selectedBayId,
+    required this.onSelect,
+  });
+
+  final List<ParkingBay> bays;
+  final List<ParkingRequest> requests;
+  final DateTime from;
+  final DateTime to;
+  final int? selectedBayId;
+  final ValueChanged<ParkingBay> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final grouped = <String, List<ParkingBay>>{};
+    for (final bay in bays) {
+      grouped
+          .putIfAbsent(
+            bay.sector?.trim().isNotEmpty == true ? bay.sector! : 'Sector',
+            () => [],
+          )
+          .add(bay);
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F7FA),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF9FB4C7)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            bay.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w800),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE4EDF4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'SUCURSAL · ÁREAS DE ACCESO Y EDIFICIO',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF496B87),
+              ),
+            ),
           ),
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 11, color: color)),
+          ...grouped.entries.indexed.expand((entry) {
+            final index = entry.$1;
+            final group = entry.$2;
+            return [
+              if (index > 0) const _ParkingLane(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 14, 2, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        group.key.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF365D7C),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${group.value.length} POSICIONES',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFF667085),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: group.value.map((bay) {
+                  final state = _visualState(bay, requests, from, to);
+                  return _ParkingBayTile(
+                    bay,
+                    state: state,
+                    selected: bay.id == selectedBayId,
+                    onTap: () {
+                      if (bay.available) {
+                        onSelect(bay);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${bay.name}: ${state.label}.'),
+                          ),
+                        );
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
+            ];
+          }),
         ],
       ),
     );
   }
+}
+
+class _ParkingLane extends StatelessWidget {
+  const _ParkingLane();
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 42,
+    margin: const EdgeInsets.only(top: 16),
+    decoration: const BoxDecoration(
+      color: Color(0xFF8B969E),
+      border: Border.symmetric(
+        horizontal: BorderSide(color: Color(0xFF66717A), width: 2),
+      ),
+    ),
+    alignment: Alignment.center,
+    child: const Text(
+      '→   CIRCULACIÓN VEHICULAR   →',
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+      ),
+    ),
+  );
+}
+
+class _ParkingLegend extends StatelessWidget {
+  const _ParkingLegend({required this.requests});
+  final List<ParkingRequest> requests;
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 10,
+    runSpacing: 8,
+    children: _ParkingVisualState.values
+        .where((state) => state != _ParkingVisualState.incompatible)
+        .map(
+          (state) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: state.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                state.label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        )
+        .toList(),
+  );
+}
+
+class _ParkingFullPlanScreen extends StatefulWidget {
+  const _ParkingFullPlanScreen({
+    required this.bays,
+    required this.requests,
+    required this.from,
+    required this.to,
+    required this.selectedBayId,
+  });
+  final List<ParkingBay> bays;
+  final List<ParkingRequest> requests;
+  final DateTime from;
+  final DateTime to;
+  final int? selectedBayId;
+
+  @override
+  State<_ParkingFullPlanScreen> createState() => _ParkingFullPlanScreenState();
+}
+
+class _ParkingFullPlanScreenState extends State<_ParkingFullPlanScreen> {
+  int? _selected;
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.selectedBayId;
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Plano de dársenas'),
+      actions: [
+        TextButton(
+          onPressed: _selected == null
+              ? null
+              : () => Navigator.pop(context, _selected),
+          child: const Text('USAR'),
+        ),
+      ],
+    ),
+    body: SafeArea(
+      child: InteractiveViewer(
+        minScale: 0.7,
+        maxScale: 3.5,
+        boundaryMargin: const EdgeInsets.all(100),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: 620,
+            child: Column(
+              children: [
+                _ParkingLegend(requests: widget.requests),
+                const SizedBox(height: 12),
+                _ParkingPlan(
+                  bays: widget.bays,
+                  requests: widget.requests,
+                  from: widget.from,
+                  to: widget.to,
+                  selectedBayId: _selected,
+                  onSelect: (bay) => setState(() => _selected = bay.id),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ParkingHero extends StatelessWidget {
+  const _ParkingHero();
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF8E2630), Color(0xFFC65F54)],
+      ),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ESTACIONAMIENTO · AUTOGESTIÓN',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Mis solicitudes',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        SizedBox(height: 5),
+        Text(
+          'Elegí una dársena verde y enviá la solicitud. Recepción o Guardia la autoriza antes del uso.',
+          style: TextStyle(color: Colors.white, height: 1.35),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ParkingEmpty extends StatelessWidget {
+  const _ParkingEmpty({required this.message});
+  final String message;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE3E8EF)),
+    ),
+    child: Text(
+      message,
+      textAlign: TextAlign.center,
+      style: const TextStyle(color: Color(0xFF667085)),
+    ),
+  );
 }
 
 class _ParkingStatus extends StatelessWidget {

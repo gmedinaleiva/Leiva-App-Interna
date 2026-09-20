@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.8.1+8002
+version: 2.0.0+20000
 
 environment:
   sdk: ^3.13.3
@@ -58,6 +58,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -72,11 +73,20 @@ flutter:
 
   assets:
     - assets/leiva_prelogin/
+    - assets/branding/
+    - assets/parking/
 
   fonts:
     - family: LeivaRobotoCondensed
       fonts:
         - asset: assets/leiva_prelogin/RobotoCondensed.ttf
+
+flutter_launcher_icons:
+  android: true
+  image_path: assets/branding/leiva-launcher.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/branding/leiva-launcher-foreground.png
+  min_sdk_android: 24
 
   # To add assets to your application, add an assets section, like this:
   # assets:
