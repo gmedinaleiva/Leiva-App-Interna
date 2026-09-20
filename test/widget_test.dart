@@ -178,6 +178,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No tenés comprobantes cargados.'), findsOneWidget);
     expect(find.byKey(const Key('createExpenseButton')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('createExpenseButton')));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).last, const Offset(0, -1200));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('cameraReceiptButton')), findsOneWidget);
   });
 }
 

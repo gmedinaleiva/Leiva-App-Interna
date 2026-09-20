@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'core/config/app_config.dart';
 import 'core/network/api_client.dart';
+import 'core/security/local_access.dart';
 import 'core/security/secure_session_store.dart';
 import 'features/auth/data/auth_api.dart';
 import 'features/auth/data/auth_repository.dart';
@@ -132,6 +133,7 @@ class _LeivaAppState extends State<LeivaApp> {
       );
       controller = AuthController(
         AuthRepository(AuthApi(client.dio), sessionStore),
+        localAccess: SecureLocalAccess(),
       );
       _authController = controller;
       _roomsGateway = RoomsRepository(RoomsApi(client.dio));
@@ -192,6 +194,9 @@ class _LeivaAppState extends State<LeivaApp> {
         ),
         home: switch (_authController.status) {
           AuthStatus.checkingSession => const _SessionLoadingScreen(),
+          AuthStatus.biometricLocked => _BiometricLockScreen(
+            authController: _authController,
+          ),
           AuthStatus.authenticated => HomeScreen(
             authController: _authController,
             roomsGateway: _roomsGateway,
@@ -235,6 +240,83 @@ class _SessionLoadingScreen extends StatelessWidget {
           SizedBox(height: 16),
           Text('Verificando sesión segura...'),
         ],
+      ),
+    ),
+  );
+}
+
+class _BiometricLockScreen extends StatelessWidget {
+  const _BiometricLockScreen({required this.authController});
+
+  final AuthController authController;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 84,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    color: AppColors.red.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.fingerprint_rounded,
+                    color: AppColors.red,
+                    size: 50,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Desbloqueá Leiva Interna',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.ink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  authController.biometricAvailable
+                      ? 'La sesión del portal sigue activa. Confirmá tu identidad para continuar.'
+                      : 'La huella no está disponible en este dispositivo. Ingresá nuevamente con tu contraseña.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.muted, height: 1.45),
+                ),
+                if (authController.message != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    authController.message!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Color(0xFFB42318)),
+                  ),
+                ],
+                const SizedBox(height: 28),
+                if (authController.biometricAvailable)
+                  FilledButton.icon(
+                    key: const Key('biometricUnlockButton'),
+                    onPressed: authController.unlockWithBiometrics,
+                    icon: const Icon(Icons.fingerprint_rounded),
+                    label: const Text('Ingresar con huella'),
+                  ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: authController.usePasswordInstead,
+                  child: const Text('Ingresar con contraseña'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     ),
   );
@@ -315,6 +397,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _userController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  late bool _rememberUsername;
+  late bool _useBiometrics;
+
+  @override
+  void initState() {
+    super.initState();
+    final remembered = widget.authController.rememberedUsername;
+    _userController.text = remembered ?? '';
+    _rememberUsername = remembered != null && remembered.isNotEmpty;
+    _useBiometrics = widget.authController.biometricEnabled;
+  }
 
   @override
   void dispose() {
@@ -329,6 +422,8 @@ class _LoginScreenState extends State<LoginScreen> {
     await widget.authController.login(
       username: _userController.text,
       password: password,
+      rememberUsername: _rememberUsername,
+      enableBiometrics: _useBiometrics,
     );
     _passwordController.clear();
   }
@@ -351,6 +446,13 @@ class _LoginScreenState extends State<LoginScreen> {
             onTogglePassword: () =>
                 setState(() => _obscurePassword = !_obscurePassword),
             onLogin: _login,
+            rememberUsername: _rememberUsername,
+            biometricAvailable: widget.authController.biometricAvailable,
+            useBiometrics: _useBiometrics,
+            onRememberUsernameChanged: (value) =>
+                setState(() => _rememberUsername = value),
+            onUseBiometricsChanged: (value) =>
+                setState(() => _useBiometrics = value),
             mobile: !wide,
           );
           return Container(
@@ -548,6 +650,11 @@ class _LoginForm extends StatelessWidget {
     required this.message,
     required this.onTogglePassword,
     required this.onLogin,
+    required this.rememberUsername,
+    required this.biometricAvailable,
+    required this.useBiometrics,
+    required this.onRememberUsernameChanged,
+    required this.onUseBiometricsChanged,
     this.mobile = false,
   });
 
@@ -559,6 +666,11 @@ class _LoginForm extends StatelessWidget {
   final String? message;
   final VoidCallback onTogglePassword;
   final VoidCallback onLogin;
+  final bool rememberUsername;
+  final bool biometricAvailable;
+  final bool useBiometrics;
+  final ValueChanged<bool> onRememberUsernameChanged;
+  final ValueChanged<bool> onUseBiometricsChanged;
   final bool mobile;
 
   @override
@@ -637,6 +749,40 @@ class _LoginForm extends StatelessWidget {
                       ? 'Ingresá tu contraseña'
                       : null,
                 ),
+                const SizedBox(height: 10),
+                Material(
+                  color: Colors.transparent,
+                  child: CheckboxListTile(
+                    key: const Key('rememberUsernameCheckbox'),
+                    value: rememberUsername,
+                    onChanged: submitting
+                        ? null
+                        : (value) => onRememberUsernameChanged(value ?? false),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    dense: true,
+                    title: const Text('Recordar mi usuario'),
+                  ),
+                ),
+                if (biometricAvailable)
+                  Material(
+                    color: Colors.transparent,
+                    child: CheckboxListTile(
+                      key: const Key('biometricLoginCheckbox'),
+                      value: useBiometrics,
+                      onChanged: submitting
+                          ? null
+                          : (value) => onUseBiometricsChanged(value ?? false),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      dense: true,
+                      secondary: const Icon(Icons.fingerprint_rounded),
+                      title: const Text('Usar huella en este dispositivo'),
+                      subtitle: const Text(
+                        'Desbloquea una sesión vigente; nunca guarda tu contraseña.',
+                      ),
+                    ),
+                  ),
                 if (message != null) ...[
                   const SizedBox(height: 16),
                   Container(

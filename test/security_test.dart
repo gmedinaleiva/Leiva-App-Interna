@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:leiva_app_interna/core/security/idempotency_key.dart';
+import 'package:leiva_app_interna/core/security/local_access.dart';
 import 'package:leiva_app_interna/features/auth/data/auth_repository.dart';
 import 'package:leiva_app_interna/features/auth/domain/auth_session.dart';
 import 'package:leiva_app_interna/features/auth/presentation/auth_controller.dart';
@@ -37,6 +38,51 @@ void main() {
     expect(capabilities.allows('my_expenses', 'travel'), isFalse);
     expect(capabilities.allows('vehicle_reservations', 'view'), isFalse);
   });
+
+  test('una sesión recordada exige huella antes de mostrar la app', () async {
+    final localAccess = _FakeLocalAccess(
+      rememberedUsername: 'piloto',
+      biometricEnabled: true,
+      biometricAvailable: true,
+      authenticationResult: true,
+    );
+    final controller = AuthController(
+      _RestoredAuthGateway(),
+      localAccess: localAccess,
+    );
+
+    await controller.initialize();
+    expect(controller.rememberedUsername, 'piloto');
+    expect(controller.status, AuthStatus.biometricLocked);
+
+    await controller.unlockWithBiometrics();
+    expect(controller.status, AuthStatus.authenticated);
+    expect(localAccess.authenticationCalls, 1);
+    controller.dispose();
+  });
+
+  test(
+    'recordar usuario nunca entrega la contraseña al almacén local',
+    () async {
+      final localAccess = _FakeLocalAccess(biometricAvailable: false);
+      final controller = AuthController(
+        _RestoredAuthGateway(restore: false),
+        localAccess: localAccess,
+      );
+      await controller.initialize();
+
+      await controller.login(
+        username: ' piloto ',
+        password: 'secreto-solo-para-api',
+        rememberUsername: true,
+      );
+
+      expect(localAccess.savedUsername, 'piloto');
+      expect(localAccess.savedUsername, isNot(contains('secreto')));
+      expect(controller.status, AuthStatus.authenticated);
+      controller.dispose();
+    },
+  );
 }
 
 final _session = AuthSession(
@@ -65,4 +111,68 @@ class _NeverCalledAuthGateway implements AuthGateway {
 
   @override
   Future<void> logoutAll(String password) => throw UnimplementedError();
+}
+
+class _RestoredAuthGateway implements AuthGateway {
+  _RestoredAuthGateway({this.restore = true});
+
+  final bool restore;
+
+  @override
+  Future<AuthSession?> restoreSession() async => restore ? _session : null;
+
+  @override
+  Future<AuthSession> login({
+    required String username,
+    required String password,
+    required String deviceName,
+    required String clientPlatform,
+  }) async => _session;
+
+  @override
+  Future<void> logout() async {}
+
+  @override
+  Future<void> logoutAll(String password) async {}
+}
+
+class _FakeLocalAccess implements LocalAccessGateway {
+  _FakeLocalAccess({
+    this.rememberedUsername,
+    this.biometricEnabled = false,
+    this.biometricAvailable = false,
+    this.authenticationResult = false,
+  });
+
+  final String? rememberedUsername;
+  bool biometricEnabled;
+  final bool biometricAvailable;
+  final bool authenticationResult;
+  String? savedUsername;
+  int authenticationCalls = 0;
+
+  @override
+  Future<bool> authenticate(String reason) async {
+    authenticationCalls++;
+    return authenticationResult;
+  }
+
+  @override
+  Future<bool> hasEnrolledBiometrics() async => biometricAvailable;
+
+  @override
+  Future<bool> isBiometricEnabled() async => biometricEnabled;
+
+  @override
+  Future<String?> readRememberedUsername() async => rememberedUsername;
+
+  @override
+  Future<void> rememberUsername(String? username) async {
+    savedUsername = username;
+  }
+
+  @override
+  Future<void> setBiometricEnabled(bool enabled) async {
+    biometricEnabled = enabled;
+  }
 }

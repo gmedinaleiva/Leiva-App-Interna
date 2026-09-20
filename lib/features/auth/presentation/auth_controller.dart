@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_error.dart';
+import '../../../core/security/local_access.dart';
 import '../data/auth_repository.dart';
 import '../domain/auth_session.dart';
 
@@ -10,19 +11,27 @@ enum AuthStatus {
   unauthenticated,
   submittingCredentials,
   authenticated,
+  biometricLocked,
   rateLimited,
   serviceUnavailable,
 }
 
 class AuthController extends ChangeNotifier {
-  AuthController(this._repository);
+  AuthController(
+    this._repository, {
+    this.localAccess = const DisabledLocalAccess(),
+  });
 
   final AuthGateway _repository;
+  final LocalAccessGateway localAccess;
 
   AuthStatus status = AuthStatus.checkingSession;
   AuthSession? session;
   String? message;
   int? retryAfterSeconds;
+  String? rememberedUsername;
+  bool biometricAvailable = false;
+  bool biometricEnabled = false;
   bool _refreshingSession = false;
 
   void invalidateSession() {
@@ -50,10 +59,17 @@ class AuthController extends ChangeNotifier {
 
   Future<void> initialize() async {
     try {
+      rememberedUsername = await localAccess.readRememberedUsername();
+      biometricEnabled = await localAccess.isBiometricEnabled();
+      biometricAvailable = await localAccess.hasEnrolledBiometrics();
       session = await _repository.restoreSession();
-      status = session == null
-          ? AuthStatus.unauthenticated
-          : AuthStatus.authenticated;
+      if (session == null) {
+        status = AuthStatus.unauthenticated;
+      } else {
+        status = biometricEnabled
+            ? AuthStatus.biometricLocked
+            : AuthStatus.authenticated;
+      }
     } catch (_) {
       status = AuthStatus.serviceUnavailable;
       message = 'No pudimos verificar la sesión. Revisá la conexión e intentá nuevamente.';
@@ -64,6 +80,8 @@ class AuthController extends ChangeNotifier {
   Future<void> login({
     required String username,
     required String password,
+    bool rememberUsername = false,
+    bool enableBiometrics = false,
   }) async {
     status = AuthStatus.submittingCredentials;
     message = null;
@@ -82,6 +100,23 @@ class AuthController extends ChangeNotifier {
             : 'Leiva App Android',
         clientPlatform: clientPlatform,
       );
+      final normalizedUsername = username.trim();
+      await localAccess.rememberUsername(
+        rememberUsername ? normalizedUsername : null,
+      );
+      rememberedUsername = rememberUsername ? normalizedUsername : null;
+      if (enableBiometrics && biometricAvailable) {
+        final verified =
+            biometricEnabled ||
+            await localAccess.authenticate(
+              'Confirmá tu identidad para activar el acceso con huella.',
+            );
+        biometricEnabled = verified;
+        await localAccess.setBiometricEnabled(verified);
+      } else if (!enableBiometrics) {
+        biometricEnabled = false;
+        await localAccess.setBiometricEnabled(false);
+      }
       status = AuthStatus.authenticated;
     } on ApiFailure catch (error) {
       if (error.statusCode == 429) {
@@ -103,6 +138,32 @@ class AuthController extends ChangeNotifier {
       message = 'El portal devolvió una respuesta inesperada.';
     }
     notifyListeners();
+  }
+
+  Future<void> unlockWithBiometrics() async {
+    if (status != AuthStatus.biometricLocked || !biometricAvailable) return;
+    message = null;
+    notifyListeners();
+    final unlocked = await localAccess.authenticate(
+      'Usá tu huella para ingresar a Leiva Interna.',
+    );
+    if (unlocked) {
+      status = AuthStatus.authenticated;
+    } else {
+      message = 'No se pudo validar la huella. Intentá nuevamente.';
+    }
+    notifyListeners();
+  }
+
+  Future<void> usePasswordInstead() async {
+    try {
+      await _repository.logout();
+    } finally {
+      session = null;
+      status = AuthStatus.unauthenticated;
+      message = null;
+      notifyListeners();
+    }
   }
 
   Future<void> logout() async {

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -837,12 +838,14 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _fuelPlate = TextEditingController();
   final _fuelProvince = TextEditingController();
   final _fuelCity = TextEditingController();
+  final _imagePicker = ImagePicker();
   late String _section;
   late DateTime _date;
   String? _rubric;
   int? _periodId;
   int? _geosatReservationId;
-  PlatformFile? _file;
+  XFile? _file;
+  Uint8List? _fileBytes;
   bool _saving = false;
   String? _error;
 
@@ -872,6 +875,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     _date = DateTime.now();
     _rubric = _currentRubrics.firstOrNull;
     _periodId = _travelPeriods.firstOrNull?.id;
+    _recoverLostPhoto();
   }
 
   @override
@@ -919,8 +923,55 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       );
       return;
     }
+    final bytes = await selected.readAsBytes();
+    if (!mounted) return;
     setState(() {
-      _file = selected;
+      _file = selected.xFile;
+      _fileBytes = Uint8List.fromList(bytes);
+      _error = null;
+    });
+  }
+
+  Future<void> _takePhoto() async {
+    try {
+      final photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 82,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        requestFullMetadata: false,
+      );
+      if (photo != null) await _acceptPhoto(photo);
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _error = 'No pudimos abrir la cámara. Revisá el permiso de cámara del teléfono.',
+      );
+    }
+  }
+
+  Future<void> _recoverLostPhoto() async {
+    try {
+      final response = await _imagePicker.retrieveLostData();
+      final photo = response.files?.firstOrNull;
+      if (photo != null) await _acceptPhoto(photo);
+    } catch (_) {
+      // El formulario sigue operativo y permite volver a tomar la foto.
+    }
+  }
+
+  Future<void> _acceptPhoto(XFile photo) async {
+    final length = await photo.length();
+    if (length > 15 * 1024 * 1024) {
+      if (!mounted) return;
+      setState(() => _error = 'La foto supera el límite de 15 MB de la app.');
+      return;
+    }
+    final bytes = await photo.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _file = photo;
+      _fileBytes = bytes;
       _error = null;
     });
   }
@@ -949,7 +1000,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           rubric: _rubric!,
           fileName: _file!.name,
           filePath: _file!.path,
-          fileBytes: await _file!.readAsBytes(),
+          fileBytes: _fileBytes ?? await _file!.readAsBytes(),
           periodId: _section == 'travel' ? _periodId : null,
           merchantName: _expenseNullable(_merchant.text),
           receiptReference: _expenseNullable(_reference.text),
@@ -1171,14 +1222,79 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _saving ? null : _pickFile,
-            icon: const Icon(Icons.attach_file_rounded),
-            label: Text(_file?.name ?? 'Seleccionar comprobante PDF o imagen'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  key: const Key('cameraReceiptButton'),
+                  onPressed: _saving ? null : _takePhoto,
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('Sacar foto'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _saving ? null : _pickFile,
+                  icon: const Icon(Icons.attach_file_rounded),
+                  label: const Text('Elegir archivo'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+              ),
+            ],
           ),
+          if (_file != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  if (_fileBytes != null && _isExpenseImage(_file!.name))
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        _fileBytes!,
+                        width: 58,
+                        height: 58,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  else
+                    const SizedBox.square(
+                      dimension: 58,
+                      child: Icon(Icons.picture_as_pdf_outlined, size: 34),
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _file!.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Quitar comprobante',
+                    onPressed: _saving
+                        ? null
+                        : () => setState(() {
+                            _file = null;
+                            _fileBytes = null;
+                          }),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -1966,6 +2082,13 @@ String _expenseMessage(Object error) {
 
 String? _expenseNullable(String value) =>
     value.trim().isEmpty ? null : value.trim();
+bool _isExpenseImage(String name) {
+  final lower = name.toLowerCase();
+  return lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png');
+}
+
 String _expenseDate(DateTime value) =>
     '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
 String _money(double? value, String currency) =>

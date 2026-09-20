@@ -76,6 +76,26 @@ Existe una interfaz `PushRepository` sin implementación. No se generan tokens
 ni se incluye configuración Firebase hasta recibir el proyecto corporativo,
 los identificadores definitivos y el backend de registro de dispositivos.
 
+## Cámara e ingreso local
+
+- La carga de comprobantes permite tomar una fotografía con la cámara o elegir
+  un PDF/imagen existente. La fotografía se comprime a un máximo de 2048 px y
+  calidad 82 antes de enviarse, mantiene el límite de 15 MB y muestra una vista
+  previa. El archivo temporal no se conserva como documento público.
+- El usuario puede recordarse en el almacenamiento seguro del dispositivo. La
+  contraseña nunca se guarda.
+- La huella desbloquea únicamente una sesión opaca todavía válida en el portal.
+  Si la sesión venció o fue revocada, se exige nuevamente la contraseña.
+
+## Ubicación y push pendientes de contrato
+
+El rastreo del teléfono y la recepción de notificaciones remotas requieren una
+definición nueva del anfitrión: capacidades en `/auth/me`, registro y baja del
+dispositivo, proveedor push corporativo, consentimiento, alcance del rastreo,
+frecuencia, retención y rutas autenticadas. Flutter no solicita ubicación en
+segundo plano ni registra tokens hasta que ese contrato esté publicado y pueda
+probarse con revocación y auditoría.
+
 ## Estado de validación de Vehículos
 
 El cliente se implementó contra OpenAPI `0.5.0-pilot` y se contrastó con los
