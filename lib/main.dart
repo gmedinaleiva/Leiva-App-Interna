@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +19,10 @@ import 'features/expenses/presentation/expenses_screen.dart';
 import 'features/parking/data/parking_api.dart';
 import 'features/parking/data/parking_repository.dart';
 import 'features/parking/presentation/parking_screen.dart';
+import 'features/push/data/push_api.dart';
+import 'features/push/domain/push_repository.dart';
+import 'features/push/presentation/push_coordinator.dart';
+import 'features/push/presentation/push_settings_screen.dart';
 import 'features/rooms/data/rooms_api.dart';
 import 'features/rooms/data/rooms_repository.dart';
 import 'features/rooms/presentation/rooms_screen.dart';
@@ -26,6 +33,11 @@ import 'leiva_prelogin/leiva_prelogin.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(
+      leivaFirebaseMessagingBackgroundHandler,
+    );
+  }
   if (!kIsWeb) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(
@@ -94,6 +106,7 @@ class LeivaApp extends StatefulWidget {
     this.vehiclesGateway,
     this.parkingGateway,
     this.expensesGateway,
+    this.pushCoordinator,
     this.skipPrelogin = false,
   });
 
@@ -102,6 +115,7 @@ class LeivaApp extends StatefulWidget {
   final VehiclesGateway? vehiclesGateway;
   final ParkingGateway? parkingGateway;
   final ExpensesGateway? expensesGateway;
+  final PushCoordinator? pushCoordinator;
   final bool skipPrelogin;
 
   @override
@@ -115,6 +129,8 @@ class _LeivaAppState extends State<LeivaApp> {
   VehiclesGateway? _vehiclesGateway;
   ParkingGateway? _parkingGateway;
   ExpensesGateway? _expensesGateway;
+  PushCoordinator? _pushCoordinator;
+  late final bool _ownsPushCoordinator;
   bool _preloginShown = false;
 
   @override
@@ -122,6 +138,7 @@ class _LeivaAppState extends State<LeivaApp> {
     super.initState();
     _preloginShown = widget.skipPrelogin;
     _ownsAuthController = widget.authController == null;
+    _ownsPushCoordinator = widget.pushCoordinator == null;
     if (widget.authController == null) {
       final sessionStore = SecureSessionStore();
       late final AuthController controller;
@@ -140,12 +157,18 @@ class _LeivaAppState extends State<LeivaApp> {
       _vehiclesGateway = VehiclesRepository(VehiclesApi(client.dio));
       _parkingGateway = ParkingRepository(ParkingApi(client.dio));
       _expensesGateway = ExpensesRepository(ExpensesApi(client.dio));
+      _pushCoordinator =
+          widget.pushCoordinator ??
+          PushCoordinator(gateway: PushRepository(PushApi(client.dio)));
+      controller.beforeLogout = _pushCoordinator!.unregister;
     } else {
       _authController = widget.authController!;
       _roomsGateway = widget.roomsGateway;
       _vehiclesGateway = widget.vehiclesGateway;
       _parkingGateway = widget.parkingGateway;
       _expensesGateway = widget.expensesGateway;
+      _pushCoordinator = widget.pushCoordinator;
+      _authController.beforeLogout = _pushCoordinator?.unregister;
     }
     _authController.initialize();
   }
@@ -153,6 +176,7 @@ class _LeivaAppState extends State<LeivaApp> {
   @override
   void dispose() {
     if (_ownsAuthController) _authController.dispose();
+    if (_ownsPushCoordinator) _pushCoordinator?.dispose();
     super.dispose();
   }
 
@@ -203,6 +227,7 @@ class _LeivaAppState extends State<LeivaApp> {
             vehiclesGateway: _vehiclesGateway,
             parkingGateway: _parkingGateway,
             expensesGateway: _expensesGateway,
+            pushCoordinator: _pushCoordinator,
           ),
           _ => LeivaPrelogin(
             skipIntro: _preloginShown,
@@ -857,6 +882,7 @@ class HomeScreen extends StatefulWidget {
     required this.vehiclesGateway,
     required this.parkingGateway,
     required this.expensesGateway,
+    this.pushCoordinator,
     super.key,
   });
 
@@ -865,6 +891,7 @@ class HomeScreen extends StatefulWidget {
   final VehiclesGateway? vehiclesGateway;
   final ParkingGateway? parkingGateway;
   final ExpensesGateway? expensesGateway;
+  final PushCoordinator? pushCoordinator;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -872,6 +899,91 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.pushCoordinator?.attachNavigationHandler(_handlePushTarget);
+    final coordinator = widget.pushCoordinator;
+    if (coordinator != null) unawaited(coordinator.startAuthenticated());
+  }
+
+  @override
+  void dispose() {
+    widget.pushCoordinator?.detachNavigationHandler();
+    super.dispose();
+  }
+
+  void _handlePushTarget(PushTarget target) {
+    unawaited(_openPushTarget(target));
+  }
+
+  Future<void> _openPushTarget(PushTarget target) async {
+    if (!mounted) return;
+    if (target.type == PushTargetType.home) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      setState(() => _selectedIndex = 0);
+      return;
+    }
+    final capabilities = widget.authController.session!.capabilities;
+    if (target.type == PushTargetType.vehicleReservation) {
+      if (widget.vehiclesGateway == null ||
+          !capabilities.allows('vehicle_reservations', 'view')) {
+        _showPushAccessDenied();
+        return;
+      }
+      try {
+        final reservation = await widget.vehiclesGateway!.reservation(
+          target.resourceId!,
+        );
+        if (!mounted) return;
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => VehicleTripScreen(
+              gateway: widget.vehiclesGateway!,
+              reservation: reservation,
+              parkingGateway: widget.parkingGateway,
+            ),
+          ),
+        );
+      } catch (_) {
+        if (mounted) _showPushOpenError();
+      }
+      return;
+    }
+    if (widget.parkingGateway == null ||
+        !capabilities.allows('parking_requests', 'view')) {
+      _showPushAccessDenied();
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ParkingScreen(
+          gateway: widget.parkingGateway!,
+          canCreate: capabilities.allows('parking_requests', 'create'),
+          focusRequestId: target.resourceId,
+        ),
+      ),
+    );
+  }
+
+  void _showPushAccessDenied() => ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Ya no tenés permiso para abrir ese aviso.')),
+  );
+
+  void _showPushOpenError() => ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('No pudimos abrir el contenido del aviso.')),
+  );
+
+  void _openPushSettings() {
+    final coordinator = widget.pushCoordinator;
+    if (coordinator == null) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PushSettingsScreen(coordinator: coordinator),
+      ),
+    );
+  }
 
   String get _displayName =>
       widget.authController.session?.user.displayName ?? 'Usuario';
@@ -905,11 +1017,10 @@ class _HomeScreenState extends State<HomeScreen> {
             actions: [
               IconButton(
                 tooltip: 'Notificaciones',
-                onPressed: () {},
-                icon: const Badge(
-                  smallSize: 8,
-                  child: Icon(Icons.notifications_none_rounded),
-                ),
+                onPressed: widget.pushCoordinator == null
+                    ? null
+                    : _openPushSettings,
+                icon: const Icon(Icons.notifications_none_rounded),
               ),
               const SizedBox(width: 8),
               CircleAvatar(

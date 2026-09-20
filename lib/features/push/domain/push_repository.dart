@@ -1,13 +1,30 @@
-abstract interface class PushRepository {
-  Future<void> registerDevice({
-    required String registrationToken,
-    required String platform,
-  });
+import '../data/push_api.dart';
+import 'push_models.dart';
 
-  Future<void> replaceToken({
-    required String previousToken,
-    required String registrationToken,
-  });
+abstract interface class PushGateway {
+  Future<PushStatus> status();
+  Future<PushInstallation> upsert(
+    String installationId,
+    PushInstallationDraft draft,
+  );
+  Future<void> unregister(String installationId);
+}
 
-  Future<void> unregisterDevice();
+class PushRepository implements PushGateway {
+  const PushRepository(this._api);
+
+  final PushApi _api;
+
+  @override
+  Future<PushStatus> status() => _api.status();
+
+  @override
+  Future<PushInstallation> upsert(
+    String installationId,
+    PushInstallationDraft draft,
+  ) => _api.upsert(installationId, draft);
+
+  @override
+  Future<void> unregister(String installationId) =>
+      _api.unregister(installationId);
 }

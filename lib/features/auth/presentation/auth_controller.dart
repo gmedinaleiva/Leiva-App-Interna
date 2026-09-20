@@ -32,6 +32,7 @@ class AuthController extends ChangeNotifier {
   String? rememberedUsername;
   bool biometricAvailable = false;
   bool biometricEnabled = false;
+  Future<void> Function()? beforeLogout;
   bool _refreshingSession = false;
 
   void invalidateSession() {
@@ -171,6 +172,7 @@ class AuthController extends ChangeNotifier {
 
   Future<void> usePasswordInstead() async {
     try {
+      await _runBeforeLogout();
       await _repository.logout();
     } finally {
       session = null;
@@ -182,12 +184,21 @@ class AuthController extends ChangeNotifier {
 
   Future<void> logout() async {
     try {
+      await _runBeforeLogout();
       await _repository.logout();
     } finally {
       session = null;
       status = AuthStatus.unauthenticated;
       message = null;
       notifyListeners();
+    }
+  }
+
+  Future<void> _runBeforeLogout() async {
+    try {
+      await beforeLogout?.call();
+    } catch (_) {
+      // El cierre de la sesión del portal debe continuar aunque falle la baja push.
     }
   }
 

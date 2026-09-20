@@ -4,8 +4,8 @@
 
 - Repositorio backend: `sistemas-leivahnos/WSL-Capital-Inversiones`.
 - Rama backend: `WSL-DEV`.
-- Commit funcional revisado: `619e3f8`.
-- Contrato revisado: `0.5.0-pilot`, publicado mediante la rama documental
+- Commit funcional revisado: `2a35bb5`.
+- Contrato revisado: `0.6.0-pilot`, publicado mediante la rama documental
   `AGENTS`.
 - Dominio Stage: `https://monitor.leivahnos.com.ar/api/app/v1`.
 - Rama Flutter: `DEV`.
@@ -72,9 +72,22 @@ confirmadas por la app.
 
 ## Notificaciones
 
-Existe una interfaz `PushRepository` sin implementación. No se generan tokens
-ni se incluye configuración Firebase hasta recibir el proyecto corporativo,
-los identificadores definitivos y el backend de registro de dispositivos.
+El cliente Android implementa el contrato APP-011: consulta `/push/status`,
+mantiene un identificador aleatorio por instalación en almacenamiento seguro,
+registra o rota el token con `PUT /push/installations/{installation_id}` y lo
+revoca antes del logout. Permite configurar las seis categorías publicadas.
+
+El canal Android es `leiva_general`. Los avisos recibidos en primer plano se
+muestran mediante una notificación local; segundo plano y aplicación terminada
+usan FCM. Sólo se aceptan `leivaapp://home`, reservas numéricas de vehículos y
+solicitudes numéricas de estacionamiento. Al abrirlas siempre se consulta de
+nuevo la API autenticada.
+
+La integración permanece cerrada mientras falte
+`android/app/google-services.json` o `/push/status` informe que el proveedor no
+está configurado. En ese estado no solicita permiso, no obtiene tokens y no
+simula entregas. El archivo de cuenta de servicio de Firebase pertenece
+exclusivamente al servidor y nunca debe copiarse al proyecto Flutter.
 
 ## Cámara e ingreso local
 
@@ -87,14 +100,25 @@ los identificadores definitivos y el backend de registro de dispositivos.
 - La huella desbloquea únicamente una sesión opaca todavía válida en el portal.
   Si la sesión venció o fue revocada, se exige nuevamente la contraseña.
 
-## Ubicación y push pendientes de contrato
+## Ubicación del teléfono
 
-El rastreo del teléfono y la recepción de notificaciones remotas requieren una
-definición nueva del anfitrión: capacidades en `/auth/me`, registro y baja del
-dispositivo, proveedor push corporativo, consentimiento, alcance del rastreo,
-frecuencia, retención y rutas autenticadas. Flutter no solicita ubicación en
-segundo plano ni registra tokens hasta que ese contrato esté publicado y pueda
-probarse con revocación y auditoría.
+El anfitrión determinó que la app no debe capturar ni transmitir la ubicación
+del teléfono. La ubicación funcional corresponde al vehículo y continúa
+obteniéndose de GeoSat mediante `/vehicle-reservations/{id}/live` y
+`/vehicle-reservations/{id}/trajectory`. Android no declara permisos de
+ubicación ni ejecuta servicios de rastreo en segundo plano.
+
+## Estado de validación de Push Android
+
+El cliente `1.8.0+8001` compila e inicia sin `google-services.json`, mostrando
+el estado diferido informado por el portal. `flutter analyze` y las 20 pruebas
+Flutter pasan. Las rutas `GET /push/status`, `PUT /push/installations/{id}` y
+`DELETE /push/installations/{id}` rechazan solicitudes anónimas con `401`.
+
+La entrega real permanece pendiente del archivo corporativo
+`android/app/google-services.json` y de que Sistemas active FCM en Stage. La
+cuenta de servicio requerida por el backend no forma parte del APK ni del
+repositorio Flutter.
 
 ## Estado de validación de Vehículos
 

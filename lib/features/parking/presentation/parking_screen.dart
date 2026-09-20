@@ -10,10 +10,12 @@ class ParkingScreen extends StatefulWidget {
   const ParkingScreen({
     required this.gateway,
     required this.canCreate,
+    this.focusRequestId,
     super.key,
   });
   final ParkingGateway gateway;
   final bool canCreate;
+  final int? focusRequestId;
 
   @override
   State<ParkingScreen> createState() => _ParkingScreenState();
@@ -44,6 +46,13 @@ class _ParkingScreenState extends State<ParkingScreen> {
       if (!mounted) return;
       setState(() {
         _requests = List<ParkingRequest>.of(result[0] as List<ParkingRequest>);
+        if (widget.focusRequestId != null) {
+          _requests.sort((a, b) {
+            if (a.id == widget.focusRequestId) return -1;
+            if (b.id == widget.focusRequestId) return 1;
+            return 0;
+          });
+        }
         _branches = List<ParkingBranch>.of(result[1] as List<ParkingBranch>);
         _loading = false;
       });
@@ -150,7 +159,12 @@ class _ParkingScreenState extends State<ParkingScreen> {
           margin: EdgeInsets.zero,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            side: const BorderSide(color: Color(0xFFE3E8EF)),
+            side: BorderSide(
+              color: row.id == widget.focusRequestId
+                  ? const Color(0xFF059669)
+                  : const Color(0xFFE3E8EF),
+              width: row.id == widget.focusRequestId ? 2 : 1,
+            ),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Padding(

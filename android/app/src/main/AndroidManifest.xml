@@ -1,10 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:label="Leiva Interna"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="leiva_general" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_launcher_foreground" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
