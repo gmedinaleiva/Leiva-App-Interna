@@ -137,8 +137,11 @@ class RoomsApi {
         'room_id': draft.roomId,
         'title': draft.title,
         'notes': draft.notes,
-        'starts_at': draft.startsAt.toUtc().toIso8601String(),
-        'ends_at': draft.endsAt.toUtc().toIso8601String(),
+        if (draft.rescheduleReason != null) ...{
+          'starts_at': draft.startsAt.toUtc().toIso8601String(),
+          'ends_at': draft.endsAt.toUtc().toIso8601String(),
+          'reschedule_reason': draft.rescheduleReason,
+        },
         'internal_participant_ids': draft.internalParticipantIds,
         'external_participants': draft.externalParticipants
             .map((participant) => participant.toJson())

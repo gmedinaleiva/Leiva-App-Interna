@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/network/api_error.dart';
+import '../../../core/security/idempotency_key.dart';
 import '../data/push_installation_store.dart';
 import '../domain/push_models.dart';
 import '../domain/push_repository.dart';
@@ -35,7 +36,13 @@ enum PushClientState {
   error,
 }
 
-enum PushTargetType { home, vehicleReservation, parkingRequest }
+enum PushTargetType {
+  home,
+  roomReservation,
+  vehicleReservation,
+  parkingRequest,
+  expenseRecord,
+}
 
 class PushTarget {
   const PushTarget(this.type, {this.resourceId});
@@ -62,12 +69,28 @@ class PushTarget {
           ? PushTarget(PushTargetType.vehicleReservation, resourceId: id)
           : null;
     }
+    if (uri.host == 'rooms' &&
+        uri.pathSegments.length == 2 &&
+        uri.pathSegments.first == 'reservations') {
+      final id = int.tryParse(uri.pathSegments.last);
+      return id != null && id > 0
+          ? PushTarget(PushTargetType.roomReservation, resourceId: id)
+          : null;
+    }
     if (uri.host == 'parking' &&
         uri.pathSegments.length == 2 &&
         uri.pathSegments.first == 'requests') {
       final id = int.tryParse(uri.pathSegments.last);
       return id != null && id > 0
           ? PushTarget(PushTargetType.parkingRequest, resourceId: id)
+          : null;
+    }
+    if (uri.host == 'expenses' &&
+        uri.pathSegments.length == 2 &&
+        uri.pathSegments.first == 'records') {
+      final id = int.tryParse(uri.pathSegments.last);
+      return id != null && id > 0
+          ? PushTarget(PushTargetType.expenseRecord, resourceId: id)
           : null;
     }
     return null;
@@ -108,6 +131,13 @@ class PushCoordinator extends ChangeNotifier {
   PushInstallation? installation;
   String? message;
   Set<String> selectedCategories = const {};
+  List<AppNotification> notifications = const [];
+  int unreadCount = 0;
+  String? nextNotificationCursor;
+  int notificationRetentionDays = 180;
+  bool inboxLoading = false;
+  String? inboxError;
+  DateTime? _lastInboxRefresh;
 
   bool get canConfigure =>
       _firebaseReady && status?.provider.configured == true;
@@ -132,6 +162,7 @@ class PushCoordinator extends ChangeNotifier {
     try {
       _installationId ??= await _installationStore.readOrCreate();
       await _initializeLocalNotifications();
+      await refreshInbox(force: true);
       status = await gateway.status();
       installation = status!.installations
           .where((item) => item.installationId == _installationId)
@@ -253,6 +284,80 @@ class PushCoordinator extends ChangeNotifier {
       return true;
     } catch (_) {
       message = 'No pudimos ejecutar la prueba local de notificaciones.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> refreshInbox({
+    bool force = false,
+    bool append = false,
+    bool unreadOnly = false,
+  }) async {
+    final now = DateTime.now();
+    if (!force &&
+        !append &&
+        _lastInboxRefresh != null &&
+        now.difference(_lastInboxRefresh!) < const Duration(seconds: 120)) {
+      return;
+    }
+    if (append && nextNotificationCursor == null) return;
+    inboxLoading = true;
+    inboxError = null;
+    notifyListeners();
+    try {
+      final page = await gateway.notifications(
+        cursor: append ? nextNotificationCursor : null,
+        unreadOnly: unreadOnly,
+      );
+      notifications = append
+          ? List.unmodifiable([...notifications, ...page.items])
+          : List.unmodifiable(page.items);
+      unreadCount = page.unreadCount;
+      nextNotificationCursor = page.nextCursor;
+      notificationRetentionDays = page.retentionDays;
+      _lastInboxRefresh = now;
+    } on ApiFailure catch (error) {
+      inboxError = error.message;
+    } catch (_) {
+      inboxError = 'No pudimos actualizar la bandeja de avisos.';
+    } finally {
+      inboxLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> markNotificationRead(AppNotification item) async {
+    if (!item.isRead) await gateway.markRead(item.id);
+    await refreshInbox(force: true);
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    await gateway.markAllRead();
+    await refreshInbox(force: true);
+  }
+
+  Future<void> openNotification(AppNotification item) async {
+    await markNotificationRead(item);
+    final target = PushTarget.parse(item.deepLink);
+    if (target != null) _emitTarget(target);
+  }
+
+  Future<bool> sendRealPushTest() async {
+    final id = installation?.installationId;
+    if (id == null) {
+      message = 'Este teléfono todavía no está registrado para recibir FCM.';
+      notifyListeners();
+      return false;
+    }
+    try {
+      await gateway.selfTest(id, newIdempotencyKey());
+      await refreshInbox(force: true);
+      return true;
+    } on ApiFailure catch (error) {
+      message = error.statusCode == 429
+          ? 'Esperá un minuto antes de repetir la prueba real.'
+          : error.message;
       notifyListeners();
       return false;
     }
@@ -385,6 +490,7 @@ class PushCoordinator extends ChangeNotifier {
   }
 
   Future<void> _showForegroundMessage(RemoteMessage remoteMessage) async {
+    unawaited(refreshInbox(force: true));
     final notification = remoteMessage.notification;
     if (notification == null) return;
     final target = PushTarget.parse(remoteMessage.data['deep_link']);

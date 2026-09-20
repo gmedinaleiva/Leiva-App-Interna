@@ -11,6 +11,12 @@ void main() {
     final parking = PushTarget.parse('leivaapp://parking/requests/17');
     expect(parking?.type, PushTargetType.parkingRequest);
     expect(parking?.resourceId, 17);
+    final room = PushTarget.parse('leivaapp://rooms/reservations/23');
+    expect(room?.type, PushTargetType.roomReservation);
+    expect(room?.resourceId, 23);
+    final expense = PushTarget.parse('leivaapp://expenses/records/41');
+    expect(expense?.type, PushTargetType.expenseRecord);
+    expect(expense?.resourceId, 41);
   });
 
   test('rechaza esquemas, rutas e identificadores no permitidos', () {
@@ -74,5 +80,34 @@ void main() {
       'notifications_enabled': true,
       'categories': ['general', 'expense_status'],
     });
+  });
+
+  test('interpreta la página canónica de avisos persistidos', () {
+    final page = NotificationPage.fromJson({
+      'items': [
+        {
+          'id': '12345678-1234-4234-8234-123456789012',
+          'category': 'room_reservation',
+          'title': 'Sala actualizada',
+          'body': 'Cambió el horario.',
+          'priority': 'normal',
+          'resource_type': 'room_reservation',
+          'resource_id': '23',
+          'deep_link': 'leivaapp://rooms/reservations/23',
+          'is_read': false,
+          'read_at': null,
+          'created_at': '2026-09-20T17:00:00Z',
+        },
+      ],
+      'unread_count': 1,
+      'next_cursor': null,
+      'retention_days': 180,
+      'recommended_refresh_seconds': 120,
+    });
+
+    expect(page.unreadCount, 1);
+    expect(page.items.single.isRead, isFalse);
+    expect(page.items.single.deepLink, 'leivaapp://rooms/reservations/23');
+    expect(page.recommendedRefreshSeconds, 120);
   });
 }

@@ -68,25 +68,35 @@ class PushSettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7ED),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFFED7AA)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.cloud_outlined, color: Color(0xFFB45309)),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'La prueba real desde el portal estará disponible cuando Sistemas active Firebase y registre este teléfono.',
-                      style: TextStyle(height: 1.4),
-                    ),
-                  ),
-                ],
+            Material(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(16),
+              child: ListTile(
+                leading: const Icon(Icons.cloud_outlined),
+                title: const Text('Enviar prueba real desde el portal'),
+                subtitle: Text(
+                  installation == null
+                      ? 'Primero debe registrarse este teléfono con Firebase.'
+                      : 'Solicita al portal un aviso FCM fijo para esta instalación. Límite: una por minuto.',
+                ),
+                trailing: const Icon(Icons.send_outlined),
+                onTap: busy || installation == null
+                    ? null
+                    : () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final success = await coordinator.sendRealPushTest();
+                        if (!context.mounted) return;
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? 'El portal aceptó la prueba FCM real.'
+                                  : coordinator.message ??
+                                        'No se pudo enviar la prueba real.',
+                            ),
+                          ),
+                        );
+                      },
               ),
             ),
             const SizedBox(height: 18),

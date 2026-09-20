@@ -135,6 +135,21 @@ class VehiclesApi {
     return VehicleNotice.fromJson(apiData(response));
   }
 
+  Future<List<VehicleAgendaItem>> activeAgenda() async {
+    final data = apiData(await _dio.get<dynamic>('vehicle-agenda/active'));
+    return _items(data).map(VehicleAgendaItem.fromJson).toList();
+  }
+
+  Future<List<VehicleAgendaItem>> agendaHistory() async {
+    final data = apiData(
+      await _dio.get<dynamic>(
+        'vehicle-agenda/history',
+        queryParameters: {'limit': 100},
+      ),
+    );
+    return _items(data).map(VehicleAgendaItem.fromJson).toList();
+  }
+
   List<Map<String, dynamic>> _items(Map<String, dynamic> data) {
     final items = data['items'];
     if (items is! List) {

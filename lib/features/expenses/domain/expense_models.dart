@@ -270,6 +270,7 @@ class ExpenseUploadDraft {
     this.currency = 'ARS',
     this.fiscalKind = 'unknown',
     this.benefitPeriod,
+    this.pettyCashFundId,
   });
 
   final String idempotencyKey;
@@ -294,6 +295,40 @@ class ExpenseUploadDraft {
   final String currency;
   final String fiscalKind;
   final String? benefitPeriod;
+  final int? pettyCashFundId;
+}
+
+class PettyCashFund {
+  const PettyCashFund({
+    required this.id,
+    required this.accountCode,
+    required this.name,
+    required this.currency,
+    required this.settlementId,
+    required this.periodStart,
+    required this.periodEnd,
+  });
+
+  factory PettyCashFund.fromJson(Map<String, dynamic> json) {
+    final settlement = json['settlement'] as Map<String, dynamic>? ?? const {};
+    return PettyCashFund(
+      id: json['id'] as int,
+      accountCode: json['account_code'] as String? ?? '',
+      name: json['name'] as String? ?? 'Caja chica',
+      currency: json['currency'] as String? ?? 'ARS',
+      settlementId: settlement['id'] as int,
+      periodStart: DateTime.parse(settlement['period_start'] as String),
+      periodEnd: DateTime.parse(settlement['period_end'] as String),
+    );
+  }
+
+  final int id;
+  final String accountCode;
+  final String name;
+  final String currency;
+  final int settlementId;
+  final DateTime periodStart;
+  final DateTime periodEnd;
 }
 
 class TravelAdvanceDraft {

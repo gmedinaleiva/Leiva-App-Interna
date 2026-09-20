@@ -394,6 +394,41 @@ class VehicleNotice {
   final dynamic telemetryEvidence;
 }
 
+class VehicleAgendaItem {
+  const VehicleAgendaItem({
+    required this.id,
+    required this.status,
+    required this.assignmentType,
+    required this.startsAt,
+    required this.vehicle,
+    this.endsAt,
+    this.notes,
+  });
+
+  factory VehicleAgendaItem.fromJson(Map<String, dynamic> json) =>
+      VehicleAgendaItem(
+        id: json['id'] as int,
+        status: json['status'] as String? ?? 'scheduled',
+        assignmentType: json['assignment_type'] as String? ?? 'Asignación',
+        startsAt: DateTime.parse(json['starts_at'] as String).toLocal(),
+        endsAt: json['ends_at'] == null
+            ? null
+            : DateTime.tryParse(json['ends_at'] as String)?.toLocal(),
+        notes: json['notes'] as String?,
+        vehicle: VehicleOption.fromJson(
+          json['vehicle'] as Map<String, dynamic>? ?? const {},
+        ),
+      );
+
+  final int id;
+  final String status;
+  final String assignmentType;
+  final DateTime startsAt;
+  final DateTime? endsAt;
+  final String? notes;
+  final VehicleOption vehicle;
+}
+
 List<Map<String, dynamic>> _vehicleMaps(dynamic value) {
   if (value is! List) return const [];
   return value.cast<Map<String, dynamic>>();

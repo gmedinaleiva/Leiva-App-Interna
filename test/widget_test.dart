@@ -300,6 +300,12 @@ class _FakeRoomsGateway implements RoomsGateway {
 
 class _FakeVehiclesGateway implements VehiclesGateway {
   @override
+  Future<List<VehicleAgendaItem>> activeAgenda() async => const [];
+
+  @override
+  Future<List<VehicleAgendaItem>> agendaHistory() async => const [];
+
+  @override
   Future<List<VehicleOption>> available({
     required DateTime from,
     required DateTime to,
@@ -373,6 +379,9 @@ class _FakeParkingGateway implements ParkingGateway {
 }
 
 class _FakeExpensesGateway implements ExpensesGateway {
+  @override
+  Future<List<PettyCashFund>> pettyCashFunds() async => const [];
+
   @override
   Future<ExpensePeriod> confirmReceipt(
     int periodId,

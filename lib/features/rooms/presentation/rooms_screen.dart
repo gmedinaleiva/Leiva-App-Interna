@@ -811,6 +811,13 @@ class _ReprogramRoomReservationScreenState
   late DateTime _to;
   bool _saving = false;
   String? _error;
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -856,6 +863,10 @@ class _ReprogramRoomReservationScreenState
   }
 
   Future<void> _submit() async {
+    if (_reason.text.trim().length < 3) {
+      setState(() => _error = 'Ingresá el motivo de la reprogramación.');
+      return;
+    }
     if (!_to.isAfter(_from)) {
       setState(
         () =>
@@ -892,6 +903,7 @@ class _ReprogramRoomReservationScreenState
                 ),
               )
               .toList(),
+          rescheduleReason: _reason.text.trim(),
         ),
       );
       if (!mounted) return;
@@ -934,6 +946,17 @@ class _ReprogramRoomReservationScreenState
           value: _to,
           onTap: () => _pick(false),
         ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _reason,
+          minLines: 2,
+          maxLines: 4,
+          maxLength: 500,
+          decoration: const InputDecoration(
+            labelText: 'Motivo del cambio',
+            hintText: 'Indicá por qué se reprograma la reunión',
+          ),
+        ),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: Color(0xFFB42318))),
@@ -973,6 +996,7 @@ class _EditRoomReservationScreenState extends State<EditRoomReservationScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _title;
   late final TextEditingController _notes;
+  final _rescheduleReason = TextEditingController();
   late DateTime _from;
   late DateTime _to;
   List<RoomBranch> _branches = const [];
@@ -984,6 +1008,9 @@ class _EditRoomReservationScreenState extends State<EditRoomReservationScreen> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+
+  bool get _scheduleChanged =>
+      _from != widget.reservation.startsAt || _to != widget.reservation.endsAt;
 
   @override
   void initState() {
@@ -1027,6 +1054,7 @@ class _EditRoomReservationScreenState extends State<EditRoomReservationScreen> {
   void dispose() {
     _title.dispose();
     _notes.dispose();
+    _rescheduleReason.dispose();
     super.dispose();
   }
 
@@ -1114,6 +1142,10 @@ class _EditRoomReservationScreenState extends State<EditRoomReservationScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate() || _roomId == null) return;
+    if (_scheduleChanged && _rescheduleReason.text.trim().length < 3) {
+      setState(() => _error = 'Ingresá el motivo de la reprogramación.');
+      return;
+    }
     if (!_to.isAfter(_from)) {
       setState(
         () => _error = 'La fecha final debe ser posterior a la inicial.',
@@ -1137,6 +1169,9 @@ class _EditRoomReservationScreenState extends State<EditRoomReservationScreen> {
               .map((participant) => participant.id)
               .toList(),
           externalParticipants: List.unmodifiable(_externalParticipants),
+          rescheduleReason: _scheduleChanged
+              ? _rescheduleReason.text.trim()
+              : null,
         ),
       );
       if (!mounted) return;
@@ -1221,6 +1256,22 @@ class _EditRoomReservationScreenState extends State<EditRoomReservationScreen> {
                     ),
                   ],
                 ),
+                if (_scheduleChanged) ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _rescheduleReason,
+                    minLines: 2,
+                    maxLines: 4,
+                    maxLength: 500,
+                    decoration: const InputDecoration(
+                      labelText: 'Motivo de la reprogramación',
+                    ),
+                    validator: (value) =>
+                        _scheduleChanged && (value ?? '').trim().length < 3
+                        ? 'Ingresá al menos 3 caracteres'
+                        : null,
+                  ),
+                ],
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _title,

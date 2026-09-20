@@ -334,6 +334,7 @@ class RoomReservationUpdate {
     this.notes,
     this.internalParticipantIds = const [],
     this.externalParticipants = const [],
+    this.rescheduleReason,
   });
 
   final int roomId;
@@ -343,6 +344,7 @@ class RoomReservationUpdate {
   final DateTime endsAt;
   final List<int> internalParticipantIds;
   final List<ExternalRoomParticipantDraft> externalParticipants;
+  final String? rescheduleReason;
 }
 
 List<Map<String, dynamic>> _roomMaps(dynamic value) {

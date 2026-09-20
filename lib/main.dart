@@ -22,7 +22,7 @@ import 'features/parking/presentation/parking_screen.dart';
 import 'features/push/data/push_api.dart';
 import 'features/push/domain/push_repository.dart';
 import 'features/push/presentation/push_coordinator.dart';
-import 'features/push/presentation/push_settings_screen.dart';
+import 'features/push/presentation/notification_inbox_screen.dart';
 import 'features/rooms/data/rooms_api.dart';
 import 'features/rooms/data/rooms_repository.dart';
 import 'features/rooms/presentation/rooms_screen.dart';
@@ -897,12 +897,13 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.pushCoordinator?.attachNavigationHandler(_handlePushTarget);
     final coordinator = widget.pushCoordinator;
     if (coordinator != null) unawaited(coordinator.startAuthenticated());
@@ -910,8 +911,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.pushCoordinator?.detachNavigationHandler();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(widget.pushCoordinator?.refreshInbox());
+    }
   }
 
   void _handlePushTarget(PushTarget target) {
@@ -951,6 +960,41 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       return;
     }
+    if (target.type == PushTargetType.roomReservation) {
+      if (widget.roomsGateway == null ||
+          !capabilities.allows('room_reservations', 'view')) {
+        _showPushAccessDenied();
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => RoomReservationDetailScreen(
+            gateway: widget.roomsGateway!,
+            reservationId: target.resourceId!,
+            currentUserId: widget.authController.session!.user.id,
+            parkingGateway: widget.parkingGateway,
+            canCreateParking: capabilities.allows('parking_requests', 'create'),
+          ),
+        ),
+      );
+      return;
+    }
+    if (target.type == PushTargetType.expenseRecord) {
+      if (widget.expensesGateway == null ||
+          !capabilities.allows('my_expenses', 'view')) {
+        _showPushAccessDenied();
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ExpenseRecordScreen(
+            gateway: widget.expensesGateway!,
+            documentId: target.resourceId!,
+          ),
+        ),
+      );
+      return;
+    }
     if (widget.parkingGateway == null ||
         !capabilities.allows('parking_requests', 'view')) {
       _showPushAccessDenied();
@@ -980,7 +1024,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (coordinator == null) return;
     Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => PushSettingsScreen(coordinator: coordinator),
+        builder: (_) => NotificationInboxScreen(coordinator: coordinator),
       ),
     );
   }
@@ -1015,13 +1059,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 : null,
             title: desktop ? null : const LeivaBrand(compact: true),
             actions: [
-              IconButton(
-                tooltip: 'Notificaciones',
-                onPressed: widget.pushCoordinator == null
-                    ? null
-                    : _openPushSettings,
-                icon: const Icon(Icons.notifications_none_rounded),
-              ),
+              if (widget.pushCoordinator case final coordinator?)
+                AnimatedBuilder(
+                  animation: coordinator,
+                  builder: (context, _) => IconButton(
+                    tooltip: coordinator.unreadCount == 0
+                        ? 'Notificaciones'
+                        : '${coordinator.unreadCount} notificaciones sin leer',
+                    onPressed: _openPushSettings,
+                    icon: Badge(
+                      isLabelVisible: coordinator.unreadCount > 0,
+                      label: Text(
+                        coordinator.unreadCount > 99
+                            ? '99+'
+                            : '${coordinator.unreadCount}',
+                      ),
+                      child: const Icon(Icons.notifications_none_rounded),
+                    ),
+                  ),
+                ),
               const SizedBox(width: 8),
               CircleAvatar(
                 radius: 18,

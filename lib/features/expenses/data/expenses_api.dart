@@ -196,11 +196,26 @@ class ExpensesApi {
         'fuel_city': draft.fuelCity ?? '',
         'personal_expense_period_id': draft.periodId?.toString() ?? '',
         'geosat_reservation_id': draft.geosatReservationId?.toString() ?? '',
+        'petty_cash_fund_id': draft.pettyCashFundId?.toString() ?? '',
         'file': file,
       }),
       options: Options(headers: {'Idempotency-Key': draft.idempotencyKey}),
     );
     return ExpenseRecord.fromJson(apiData(response));
+  }
+
+  Future<List<PettyCashFund>> pettyCashFunds() async {
+    final data = apiData(
+      await _dio.get<dynamic>('my-expenses/petty-cash-funds'),
+    );
+    final items = data['items'];
+    if (items is! List) {
+      throw const FormatException('La API devolvió fondos inesperados.');
+    }
+    return items
+        .cast<Map<String, dynamic>>()
+        .map(PettyCashFund.fromJson)
+        .toList();
   }
 
   String _date(DateTime value) =>

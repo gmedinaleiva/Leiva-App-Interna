@@ -116,3 +116,72 @@ class PushInstallationDraft {
 
 List<Map<String, dynamic>> _pushMaps(dynamic value) =>
     (value as List? ?? const []).whereType<Map<String, dynamic>>().toList();
+
+class AppNotification {
+  const AppNotification({
+    required this.id,
+    required this.category,
+    required this.title,
+    required this.body,
+    required this.priority,
+    required this.isRead,
+    required this.createdAt,
+    this.resourceType,
+    this.resourceId,
+    this.deepLink,
+    this.readAt,
+  });
+
+  factory AppNotification.fromJson(Map<String, dynamic> json) =>
+      AppNotification(
+        id: json['id'] as String,
+        category: json['category'] as String? ?? 'general',
+        title: json['title'] as String? ?? 'Leiva Interna',
+        body: json['body'] as String? ?? '',
+        priority: json['priority'] as String? ?? 'normal',
+        resourceType: json['resource_type'] as String?,
+        resourceId: json['resource_id'] as String?,
+        deepLink: json['deep_link'] as String?,
+        isRead: json['is_read'] as bool? ?? false,
+        readAt: DateTime.tryParse(json['read_at'] as String? ?? '')?.toLocal(),
+        createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+      );
+
+  final String id;
+  final String category;
+  final String title;
+  final String body;
+  final String priority;
+  final String? resourceType;
+  final String? resourceId;
+  final String? deepLink;
+  final bool isRead;
+  final DateTime? readAt;
+  final DateTime createdAt;
+}
+
+class NotificationPage {
+  const NotificationPage({
+    required this.items,
+    required this.unreadCount,
+    required this.retentionDays,
+    required this.recommendedRefreshSeconds,
+    this.nextCursor,
+  });
+
+  factory NotificationPage.fromJson(Map<String, dynamic> json) =>
+      NotificationPage(
+        items: _pushMaps(json['items']).map(AppNotification.fromJson).toList(),
+        unreadCount: json['unread_count'] as int? ?? 0,
+        nextCursor: json['next_cursor'] as String?,
+        retentionDays: json['retention_days'] as int? ?? 180,
+        recommendedRefreshSeconds:
+            json['recommended_refresh_seconds'] as int? ?? 120,
+      );
+
+  final List<AppNotification> items;
+  final int unreadCount;
+  final String? nextCursor;
+  final int retentionDays;
+  final int recommendedRefreshSeconds;
+}

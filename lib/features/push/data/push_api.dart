@@ -30,4 +30,52 @@ class PushApi {
     );
     ensureApiSuccess(response);
   }
+
+  Future<NotificationPage> notifications({
+    String? cursor,
+    bool unreadOnly = false,
+  }) async => NotificationPage.fromJson(
+    apiData(
+      await _dio.get<dynamic>(
+        'notifications',
+        queryParameters: <String, dynamic>{
+          'cursor': cursor,
+          'unread_only': unreadOnly,
+          'limit': 30,
+        }..removeWhere((_, value) => value == null),
+      ),
+    ),
+  );
+
+  Future<int> unreadCount() async =>
+      apiData(
+            await _dio.get<dynamic>('notifications/unread-count'),
+          )['unread_count']
+          as int? ??
+      0;
+
+  Future<bool> markRead(String notificationId) async =>
+      apiData(
+            await _dio.post<dynamic>('notifications/$notificationId/read'),
+          )['changed']
+          as bool? ??
+      false;
+
+  Future<int> markAllRead() async =>
+      apiData(await _dio.post<dynamic>('notifications/read-all'))['marked_read']
+          as int? ??
+      0;
+
+  Future<void> selfTest(String installationId, String idempotencyKey) async {
+    ensureApiSuccess(
+      await _dio.post<dynamic>(
+        'push/test',
+        data: {'installation_id': installationId},
+        options: Options(
+          contentType: Headers.jsonContentType,
+          headers: {'Idempotency-Key': idempotencyKey},
+        ),
+      ),
+    );
+  }
 }

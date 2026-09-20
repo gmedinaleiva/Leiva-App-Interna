@@ -5,6 +5,7 @@ abstract interface class ExpensesGateway {
   Future<ExpenseDashboard> dashboard();
   Future<ExpenseRubrics> rubrics();
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft);
+  Future<List<PettyCashFund>> pettyCashFunds();
   Future<ExpenseRecord> record(int documentId);
   Future<ExpenseFile> file(int documentId);
   Future<ExpenseFile> report({
@@ -36,6 +37,9 @@ class ExpensesRepository implements ExpensesGateway {
 
   @override
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft) => _api.upload(draft);
+
+  @override
+  Future<List<PettyCashFund>> pettyCashFunds() => _api.pettyCashFunds();
 
   @override
   Future<ExpenseRecord> record(int documentId) => _api.record(documentId);

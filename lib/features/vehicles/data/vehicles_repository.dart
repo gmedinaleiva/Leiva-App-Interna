@@ -26,6 +26,8 @@ abstract interface class VehiclesGateway {
   Future<VehicleTripView> trip(int reservationId, {required bool live});
   Future<List<VehicleNotice>> notices({int? reservationId});
   Future<VehicleNotice> notice(int noticeId);
+  Future<List<VehicleAgendaItem>> activeAgenda();
+  Future<List<VehicleAgendaItem>> agendaHistory();
 }
 
 class VehiclesRepository implements VehiclesGateway {
@@ -79,4 +81,10 @@ class VehiclesRepository implements VehiclesGateway {
 
   @override
   Future<VehicleNotice> notice(int noticeId) => _api.notice(noticeId);
+
+  @override
+  Future<List<VehicleAgendaItem>> activeAgenda() => _api.activeAgenda();
+
+  @override
+  Future<List<VehicleAgendaItem>> agendaHistory() => _api.agendaHistory();
 }

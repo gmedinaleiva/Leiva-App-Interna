@@ -1193,6 +1193,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   late DateTime _date;
   String? _rubric;
   int? _periodId;
+  int? _pettyCashFundId;
+  List<PettyCashFund> _pettyCashFunds = const [];
   int? _geosatReservationId;
   String _currency = 'ARS';
   String _fiscalKind = 'unknown';
@@ -1231,7 +1233,17 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     _date = DateTime.now();
     _rubric = _currentRubrics.firstOrNull;
     _periodId = _travelPeriods.firstOrNull?.id;
+    _loadPettyCashFunds();
     _recoverLostPhoto();
+  }
+
+  Future<void> _loadPettyCashFunds() async {
+    try {
+      final funds = await widget.gateway.pettyCashFunds();
+      if (mounted) setState(() => _pettyCashFunds = funds);
+    } catch (_) {
+      // Caja chica es opcional; la rendición personal sigue disponible.
+    }
   }
 
   @override
@@ -1254,6 +1266,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       _section = value;
       _rubric = _currentRubrics.firstOrNull;
       _periodId = value == 'travel' ? _travelPeriods.firstOrNull?.id : null;
+      _pettyCashFundId = null;
     });
   }
 
@@ -1339,8 +1352,20 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       setState(() => _error = 'Seleccioná un comprobante.');
       return;
     }
-    if (_section == 'travel' && _periodId == null) {
-      setState(() => _error = 'Seleccioná una rendición para el viático.');
+    if (_section == 'travel' && _periodId == null && _pettyCashFundId == null) {
+      setState(() => _error = 'Seleccioná una rendición o una Caja chica.');
+      return;
+    }
+    final pettyFund = _pettyCashFunds
+        .where((item) => item.id == _pettyCashFundId)
+        .firstOrNull;
+    if (pettyFund != null &&
+        (_date.isBefore(pettyFund.periodStart) ||
+            _date.isAfter(pettyFund.periodEnd))) {
+      setState(
+        () => _error =
+            'La fecha debe estar dentro de la rendición abierta de Caja chica.',
+      );
       return;
     }
     setState(() {
@@ -1359,6 +1384,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           filePath: _file!.path,
           fileBytes: _fileBytes ?? await _file!.readAsBytes(),
           periodId: _section == 'travel' ? _periodId : null,
+          pettyCashFundId: _section == 'travel' ? _pettyCashFundId : null,
           merchantName: _expenseNullable(_merchant.text),
           receiptReference: _expenseNullable(_reference.text),
           description: _expenseNullable(_description.text),
@@ -1462,7 +1488,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                 child: Text('USD · Dólar estadounidense'),
               ),
             ],
-            onChanged: (value) => setState(() => _currency = value ?? 'ARS'),
+            onChanged: _pettyCashFundId == null
+                ? (value) => setState(() => _currency = value ?? 'ARS')
+                : null,
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -1478,21 +1506,56 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           ),
           if (_section == 'travel') ...[
             const SizedBox(height: 16),
-            DropdownButtonFormField<int>(
-              initialValue: _periodId,
-              decoration: const InputDecoration(labelText: 'Rendición'),
-              items: _travelPeriods
-                  .map(
-                    (period) => DropdownMenuItem(
-                      value: period.id,
-                      child: Text(period.label),
+            DropdownButtonFormField<String>(
+              initialValue: _pettyCashFundId == null
+                  ? (_periodId == null ? null : 'period:$_periodId')
+                  : 'fund:$_pettyCashFundId',
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Imputación'),
+              items: [
+                ..._travelPeriods.map(
+                  (period) => DropdownMenuItem(
+                    value: 'period:${period.id}',
+                    child: Text(
+                      'Rendición personal · ${period.label}',
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => _periodId = value),
-              validator: (value) =>
-                  value == null ? 'Seleccioná una rendición' : null,
+                  ),
+                ),
+                ..._pettyCashFunds.map(
+                  (fund) => DropdownMenuItem(
+                    value: 'fund:${fund.id}',
+                    child: Text(
+                      'Caja chica · ${fund.name} · ${_expenseDate(fund.periodStart)} a ${_expenseDate(fund.periodEnd)}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (value) => setState(() {
+                if (value?.startsWith('fund:') == true) {
+                  _pettyCashFundId = int.tryParse(value!.substring(5));
+                  _periodId = null;
+                  final fund = _pettyCashFunds
+                      .where((item) => item.id == _pettyCashFundId)
+                      .firstOrNull;
+                  if (fund != null) _currency = fund.currency;
+                } else {
+                  _periodId = int.tryParse(value?.substring(7) ?? '');
+                  _pettyCashFundId = null;
+                }
+              }),
+              validator: (value) => value == null
+                  ? 'Seleccioná una rendición o una Caja chica'
+                  : null,
             ),
+            if (_pettyCashFundId != null) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'El gasto quedará pendiente de autorización del responsable de la Caja chica.',
+                style: TextStyle(color: Color(0xFF667085), fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 16),
             DropdownButtonFormField<int>(
               initialValue: _geosatReservationId ?? 0,

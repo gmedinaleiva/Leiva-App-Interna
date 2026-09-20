@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:leiva_app_interna/features/expenses/domain/expense_models.dart';
 import 'package:leiva_app_interna/features/parking/domain/parking_models.dart';
 import 'package:leiva_app_interna/features/rooms/domain/room_models.dart';
+import 'package:leiva_app_interna/features/vehicles/domain/vehicle_models.dart';
 
 void main() {
   test('room detail keeps ownership, participants and visitor parking', () {
@@ -102,5 +103,45 @@ void main() {
     expect(request.meetingRoomReservationId, 31);
     expect(request.geosatReservationId, 88);
     expect(request.resolutionNotes, 'Asignada por Guardia');
+  });
+
+  test('parses manager vehicle agenda without inferring trips', () {
+    final item = VehicleAgendaItem.fromJson({
+      'id': 7,
+      'status': 'scheduled',
+      'assignment_type': 'visita_cliente',
+      'starts_at': '2026-09-21T12:00:00Z',
+      'ends_at': '2026-09-21T14:00:00Z',
+      'notes': 'Visita programada',
+      'vehicle': {
+        'id': 4,
+        'label': 'AF 211 SZ',
+        'license_plate': 'AF 211 SZ',
+        'brand': 'Nissan',
+        'model': 'Frontier',
+      },
+    });
+
+    expect(item.status, 'scheduled');
+    expect(item.vehicle.licensePlate, 'AF 211 SZ');
+    expect(item.notes, 'Visita programada');
+  });
+
+  test('parses an authorized petty cash fund and open settlement', () {
+    final fund = PettyCashFund.fromJson({
+      'id': 5,
+      'account_code': 'SIS-01',
+      'name': 'Caja Sistemas',
+      'currency': 'ARS',
+      'settlement': {
+        'id': 9,
+        'period_start': '2026-09-01',
+        'period_end': '2026-09-30',
+      },
+    });
+
+    expect(fund.accountCode, 'SIS-01');
+    expect(fund.settlementId, 9);
+    expect(fund.periodEnd.day, 30);
   });
 }

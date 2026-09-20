@@ -33,6 +33,8 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
   String? _error;
   List<VehicleReservation> _reservations = const [];
   List<VehicleOption> _vehicles = const [];
+  List<VehicleAgendaItem> _activeAgenda = const [];
+  List<VehicleAgendaItem> _agendaHistory = const [];
   int _historyDays = 30;
 
   @override
@@ -54,6 +56,8 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
           from: now,
           to: now.add(const Duration(hours: 1)),
         ),
+        widget.gateway.activeAgenda(),
+        widget.gateway.agendaHistory(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -61,6 +65,12 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
           result[0] as List<VehicleReservation>,
         );
         _vehicles = List<VehicleOption>.of(result[1] as List<VehicleOption>);
+        _activeAgenda = List<VehicleAgendaItem>.of(
+          result[2] as List<VehicleAgendaItem>,
+        );
+        _agendaHistory = List<VehicleAgendaItem>.of(
+          result[3] as List<VehicleAgendaItem>,
+        );
         _loading = false;
       });
     } catch (error) {
@@ -209,6 +219,8 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
           vehicleCount: _vehicles.length,
           activeCount: active.length + upcoming.length,
           historyCount: _reservations.length - active.length - upcoming.length,
+          agendaCount: _activeAgenda.length,
+          agendaHistoryCount: _agendaHistory.length,
           onVehicles: () => _showVehicles(_vehicles),
           onActive: () => _showReservations('Mis reservas activas', [
             ...active,
@@ -222,8 +234,9 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
                 )
                 .toList(),
           ),
-          onAgenda: () => _showAgendaUnavailable(false),
-          onAgendaHistory: () => _showAgendaUnavailable(true),
+          onAgenda: () => _showAgenda('Mi agenda activa', _activeAgenda),
+          onAgendaHistory: () =>
+              _showAgenda('Historial de agenda', _agendaHistory),
         ),
         const SizedBox(height: 16),
         if (_reservations.isEmpty) const _SmallMobilityEmpty(),
@@ -331,37 +344,43 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
     ),
   );
 
-  Future<void> _showAgendaUnavailable(bool history) =>
-      showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                history ? Icons.history_rounded : Icons.event_note_rounded,
-                size: 44,
-                color: const Color(0xFF9B3139),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                history ? 'Historial de agenda' : 'Mi agenda activa',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'El portal todavía debe publicar la agenda gerencial en /api/app/v1. La app no mezcla este dato con el historial de viajes.',
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
+  Future<void> _showAgenda(
+    String title,
+    List<VehicleAgendaItem> rows,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) => _MobilitySheet(
+      title: title,
+      children: rows.isEmpty
+          ? const [
+              Text('No tenés asignaciones de Gerencia o Flota para mostrar.'),
+            ]
+          : rows
+                .map(
+                  (row) => Card(
+                    elevation: 0,
+                    child: ListTile(
+                      leading: Icon(
+                        row.status == 'active'
+                            ? Icons.route_rounded
+                            : Icons.event_note_rounded,
+                      ),
+                      title: Text(
+                        row.vehicle.label,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text(
+                        '${row.assignmentType}\n${_dt(row.startsAt)}${row.endsAt == null ? '' : ' — ${_dt(row.endsAt!)}'}${row.notes?.trim().isNotEmpty == true ? '\n${row.notes}' : ''}',
+                      ),
+                      trailing: Chip(label: Text(_agendaStatus(row.status))),
+                    ),
+                  ),
+                )
+                .toList(),
+    ),
+  );
 
   List<Widget> _section(String title, List<VehicleReservation> rows) {
     if (rows.isEmpty) return const [];
@@ -518,6 +537,8 @@ class _MobilityKpis extends StatelessWidget {
     required this.vehicleCount,
     required this.activeCount,
     required this.historyCount,
+    required this.agendaCount,
+    required this.agendaHistoryCount,
     required this.onVehicles,
     required this.onActive,
     required this.onHistory,
@@ -527,6 +548,8 @@ class _MobilityKpis extends StatelessWidget {
   final int vehicleCount;
   final int activeCount;
   final int historyCount;
+  final int agendaCount;
+  final int agendaHistoryCount;
   final VoidCallback onVehicles;
   final VoidCallback onActive;
   final VoidCallback onHistory;
@@ -559,13 +582,13 @@ class _MobilityKpis extends StatelessWidget {
         ),
         _MobilityKpi(
           label: 'Mi agenda activa',
-          value: 0,
+          value: agendaCount,
           icon: Icons.event_note_rounded,
           onTap: onAgenda,
         ),
         _MobilityKpi(
           label: 'Historial de agenda',
-          value: 0,
+          value: agendaHistoryCount,
           icon: Icons.calendar_month_outlined,
           onTap: onAgendaHistory,
         ),
@@ -2452,6 +2475,12 @@ String _two(int value) => value.toString().padLeft(2, '0');
 String _dt(DateTime value) =>
     '${_two(value.day)}/${_two(value.month)}/${value.year} ${_time(value)}';
 String _time(DateTime value) => '${_two(value.hour)}:${_two(value.minute)}';
+String _agendaStatus(String value) => switch (value) {
+  'scheduled' => 'Programada',
+  'active' => 'Activa',
+  'completed' => 'Finalizada',
+  _ => value,
+};
 String _statusLabel(String value) => switch (value.toLowerCase()) {
   'pendiente' || 'pending' => 'Pendiente',
   'aprobada' || 'approved' => 'Aprobada',
