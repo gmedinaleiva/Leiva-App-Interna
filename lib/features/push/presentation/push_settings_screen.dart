@@ -40,6 +40,59 @@ class PushSettingsScreen extends StatelessWidget {
             Material(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
+              child: ListTile(
+                leading: const Icon(Icons.vibration_rounded),
+                title: const Text('Probar sonido y vibración'),
+                subtitle: const Text(
+                  'Genera una prueba local en este teléfono. No utiliza Firebase ni el portal.',
+                ),
+                trailing: const Icon(Icons.play_arrow_rounded),
+                onTap: busy
+                    ? null
+                    : () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final success = await coordinator
+                            .showLocalTestNotification();
+                        if (!context.mounted) return;
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? 'Prueba local enviada al teléfono.'
+                                  : coordinator.message ??
+                                        'No se pudo ejecutar la prueba.',
+                            ),
+                          ),
+                        );
+                      },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFFED7AA)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.cloud_outlined, color: Color(0xFFB45309)),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'La prueba real desde el portal estará disponible cuando Sistemas active Firebase y registre este teléfono.',
+                      style: TextStyle(height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
               child: SwitchListTile(
                 key: const Key('pushMasterSwitch'),
                 value: enabled,

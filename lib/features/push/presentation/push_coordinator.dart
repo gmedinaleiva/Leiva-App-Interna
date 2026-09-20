@@ -216,6 +216,48 @@ class PushCoordinator extends ChangeNotifier {
     }
   }
 
+  Future<bool> showLocalTestNotification() async {
+    try {
+      await _initializeLocalNotifications();
+      final android = _localNotifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      final allowed = await android?.requestNotificationsPermission() ?? true;
+      if (!allowed) {
+        state = PushClientState.permissionDenied;
+        message = 'Android no autorizó las notificaciones en este teléfono.';
+        notifyListeners();
+        return false;
+      }
+      const details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          pushAndroidChannelId,
+          'Leiva Interna',
+          channelDescription:
+              'Avisos de reservas, estacionamiento y gestiones personales.',
+          importance: Importance.high,
+          priority: Priority.high,
+          icon: 'ic_launcher_foreground',
+          playSound: true,
+          enableVibration: true,
+        ),
+      );
+      await _localNotifications.show(
+        id: DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
+        title: 'Prueba de Leiva Interna',
+        body: 'El sonido y la vibración de las notificaciones están listos.',
+        notificationDetails: details,
+        payload: 'leivaapp://home',
+      );
+      return true;
+    } catch (_) {
+      message = 'No pudimos ejecutar la prueba local de notificaciones.';
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> updatePreferences({
     required bool enabled,
     required Set<String> categories,
