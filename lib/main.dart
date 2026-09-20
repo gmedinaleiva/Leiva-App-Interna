@@ -976,6 +976,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   vehiclesGateway: widget.vehiclesGateway,
                   parkingGateway: widget.parkingGateway,
                   expensesGateway: widget.expensesGateway,
+                  biometricAvailable: widget.authController.biometricAvailable,
+                  biometricEnabled: widget.authController.biometricEnabled,
+                  onBiometricChanged:
+                      widget.authController.configureBiometricUnlock,
                   onLogout: widget.authController.logout,
                 ),
               ),
@@ -1044,6 +1048,9 @@ class _DashboardContent extends StatelessWidget {
     required this.vehiclesGateway,
     required this.parkingGateway,
     required this.expensesGateway,
+    required this.biometricAvailable,
+    required this.biometricEnabled,
+    required this.onBiometricChanged,
     required this.onLogout,
   });
 
@@ -1055,6 +1062,9 @@ class _DashboardContent extends StatelessWidget {
   final VehiclesGateway? vehiclesGateway;
   final ParkingGateway? parkingGateway;
   final ExpensesGateway? expensesGateway;
+  final bool biometricAvailable;
+  final bool biometricEnabled;
+  final Future<bool> Function(bool enabled) onBiometricChanged;
   final VoidCallback onLogout;
 
   @override
@@ -1192,6 +1202,9 @@ class _DashboardContent extends StatelessWidget {
           displayName: displayName,
           enabledModules: modules.where((module) => module.enabled).length,
           totalModules: modules.length,
+          biometricAvailable: biometricAvailable,
+          biometricEnabled: biometricEnabled,
+          onBiometricChanged: onBiometricChanged,
           onLogout: onLogout,
         ),
       );
@@ -1367,11 +1380,17 @@ class _ProfileCard extends StatelessWidget {
     required this.displayName,
     required this.enabledModules,
     required this.totalModules,
+    required this.biometricAvailable,
+    required this.biometricEnabled,
+    required this.onBiometricChanged,
     required this.onLogout,
   });
   final String displayName;
   final int enabledModules;
   final int totalModules;
+  final bool biometricAvailable;
+  final bool biometricEnabled;
+  final Future<bool> Function(bool enabled) onBiometricChanged;
   final VoidCallback onLogout;
 
   @override
@@ -1413,6 +1432,36 @@ class _ProfileCard extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 16),
+      if (biometricAvailable) ...[
+        Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          child: SwitchListTile(
+            key: const Key('profileBiometricSwitch'),
+            value: biometricEnabled,
+            secondary: const Icon(Icons.fingerprint_rounded),
+            title: const Text('Ingreso con huella'),
+            subtitle: const Text(
+              'Protege una sesión vigente sin guardar tu contraseña.',
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xFFE8ECF1)),
+            ),
+            onChanged: (enabled) async {
+              final changed = await onBiometricChanged(enabled);
+              if (!changed && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('No se pudo confirmar la huella.'),
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
       SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(

@@ -155,6 +155,20 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> configureBiometricUnlock(bool enabled) async {
+    if (enabled) {
+      if (!biometricAvailable) return false;
+      final verified = await localAccess.authenticate(
+        'Confirmá tu identidad para activar el acceso con huella.',
+      );
+      if (!verified) return false;
+    }
+    await localAccess.setBiometricEnabled(enabled);
+    biometricEnabled = enabled;
+    notifyListeners();
+    return true;
+  }
+
   Future<void> usePasswordInstead() async {
     try {
       await _repository.logout();
