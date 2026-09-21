@@ -110,4 +110,47 @@ void main() {
     expect(page.items.single.deepLink, 'leivaapp://rooms/reservations/23');
     expect(page.recommendedRefreshSeconds, 120);
   });
+
+  test('interpreta la credencial opaca del enrolamiento persistente', () {
+    final enrollment = PersistentEnrollment.fromJson({
+      'installation': {
+        'installation_id': '12345678-1234-4234-8234-123456789012',
+        'platform': 'android',
+        'device_name': 'Leiva App Android',
+        'permission_status': 'authorized',
+        'notifications_enabled': true,
+        'categories': ['general', 'expense_status'],
+        'persistent_enrollment': true,
+        'credential_expires_at': '2026-12-20T17:00:00Z',
+      },
+      'device_credential': 'opaque-device-credential-12345678901234567890',
+      'credential_scheme': 'Device',
+      'credential_expires_at': '2026-12-20T17:00:00Z',
+    });
+
+    expect(enrollment.credentialScheme, 'Device');
+    expect(enrollment.installation.persistentEnrollment, isTrue);
+    expect(enrollment.credentialExpiresAt.isUtc, isTrue);
+  });
+
+  test('renueva token sin enviar usuario, plataforma ni installation id', () {
+    const draft = DeviceTokenRefreshDraft(
+      token: 'abcdefghijklmnopqrstuvwxyz1234567890',
+      appVersion: '2.2.0+22000',
+      permissionStatus: 'authorized',
+      notificationsEnabled: true,
+      categories: ['general', 'vehicle_notice'],
+    );
+
+    expect(draft.toJson(), {
+      'token': 'abcdefghijklmnopqrstuvwxyz1234567890',
+      'app_version': '2.2.0+22000',
+      'permission_status': 'authorized',
+      'notifications_enabled': true,
+      'categories': ['general', 'vehicle_notice'],
+    });
+    expect(draft.toJson(), isNot(contains('installation_id')));
+    expect(draft.toJson(), isNot(contains('platform')));
+    expect(draft.toJson(), isNot(contains('user_id')));
+  });
 }

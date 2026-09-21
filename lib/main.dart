@@ -160,7 +160,8 @@ class _LeivaAppState extends State<LeivaApp> {
       _pushCoordinator =
           widget.pushCoordinator ??
           PushCoordinator(gateway: PushRepository(PushApi(client.dio)));
-      controller.beforeLogout = _pushCoordinator!.unregister;
+      controller.beforeLogout = _pushCoordinator!.beforeLogout;
+      controller.onSessionEnded = _pushCoordinator!.enterUnauthenticatedMode;
     } else {
       _authController = widget.authController!;
       _roomsGateway = widget.roomsGateway;
@@ -168,9 +169,12 @@ class _LeivaAppState extends State<LeivaApp> {
       _parkingGateway = widget.parkingGateway;
       _expensesGateway = widget.expensesGateway;
       _pushCoordinator = widget.pushCoordinator;
-      _authController.beforeLogout = _pushCoordinator?.unregister;
+      _authController.beforeLogout = _pushCoordinator?.beforeLogout;
+      _authController.onSessionEnded =
+          _pushCoordinator?.enterUnauthenticatedMode;
     }
     _authController.initialize();
+    unawaited(_pushCoordinator?.startUnauthenticated());
   }
 
   @override

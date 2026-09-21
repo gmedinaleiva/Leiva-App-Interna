@@ -72,10 +72,29 @@ confirmadas por la app.
 
 ## Notificaciones
 
+Desde OpenAPI `0.8.0-pilot`, el usuario puede consentir que el teléfono continúe
+recibiendo avisos después del logout ordinario o del vencimiento de la cookie.
+Flutter conserva en Android Keystore una credencial opaca exclusiva del
+dispositivo. Las llamadas `Device` no envían cookie ni CSRF y sólo consultan el
+estado mínimo, renuevan el token FCM o desvinculan esa instalación.
+
+Sin sesión, el portal reemplaza título y cuerpo por un aviso genérico. Al tocar
+la notificación, Flutter conserva el deep link permitido, solicita login y
+recién después consulta el recurso autenticado. `logout-all`, reset de
+contraseña, usuario desactivado y baja móvil revocan el enrolamiento. La
+credencial vence a los 90 días y se rota durante un login posterior.
+
+Salas, estados administrativos de vehículos y dársenas ya producen eventos.
+Gastos y avisos GeoSat de velocidad/radar tienen categoría y contrato, pero sus
+emisores todavía están pendientes en el portal y no se presentan como
+garantizados.
+
 El cliente Android implementa el contrato APP-011: consulta `/push/status`,
 mantiene un identificador aleatorio por instalación en almacenamiento seguro,
 registra o rota el token con `PUT /push/installations/{installation_id}` y lo
-revoca antes del logout. Permite configurar las seis categorías publicadas.
+revoca antes del logout cuando no existe consentimiento persistente. Con
+consentimiento conserva el enrolamiento mediante las rutas `push/device`.
+Permite configurar las seis categorías publicadas.
 
 El canal Android es `leiva_general`. Los avisos recibidos en primer plano se
 muestran mediante una notificación local; segundo plano y aplicación terminada
@@ -115,10 +134,10 @@ el estado diferido informado por el portal. `flutter analyze` y las 20 pruebas
 Flutter pasan. Las rutas `GET /push/status`, `PUT /push/installations/{id}` y
 `DELETE /push/installations/{id}` rechazan solicitudes anónimas con `401`.
 
-La entrega real permanece pendiente del archivo corporativo
-`android/app/google-services.json` y de que Sistemas active FCM en Stage. La
-cuenta de servicio requerida por el backend no forma parte del APK ni del
-repositorio Flutter.
+La entrega real fue validada el 21/09/2026 en un Moto G34: FCM aceptó el envío
+con la aplicación terminada. `google-services.json` está instalado localmente e
+ignorado por Git; la cuenta de servicio requerida por el backend no forma parte
+del APK ni del repositorio Flutter.
 
 ## Estado de validación de Vehículos
 

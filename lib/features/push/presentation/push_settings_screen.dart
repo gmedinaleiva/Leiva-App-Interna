@@ -119,6 +119,50 @@ class PushSettingsScreen extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            Material(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(16),
+              child: SwitchListTile(
+                key: const Key('persistentPushSwitch'),
+                value: coordinator.persistentEnrollmentEnabled,
+                onChanged: busy || installation == null
+                    ? null
+                    : (value) => _changePersistentEnrollment(
+                        context,
+                        coordinator,
+                        value,
+                      ),
+                secondary: const Icon(Icons.phonelink_lock_rounded),
+                title: const Text(
+                  'Mantener avisos al cerrar sesión',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  coordinator.persistentEnrollmentEnabled
+                      ? 'Este teléfono seguirá vinculado. Sin sesión sólo se muestra un aviso genérico.${_expirationText(coordinator.persistentEnrollmentExpiresAt)}'
+                      : 'Requiere tu consentimiento. Los detalles se muestran únicamente después de iniciar sesión.',
+                ),
+              ),
+            ),
+            if (coordinator.persistentEnrollmentEnabled) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('unlinkPersistentDeviceButton'),
+                  onPressed: busy
+                      ? null
+                      : () => _changePersistentEnrollment(
+                          context,
+                          coordinator,
+                          false,
+                        ),
+                  icon: const Icon(Icons.link_off_rounded),
+                  label: const Text('Desvincular este dispositivo'),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             const Text(
               'Tipos de avisos',
@@ -187,6 +231,56 @@ class PushSettingsScreen extends StatelessWidget {
       );
     },
   );
+
+  Future<void> _changePersistentEnrollment(
+    BuildContext context,
+    PushCoordinator coordinator,
+    bool enabled,
+  ) async {
+    if (!enabled) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Desvincular dispositivo'),
+          content: const Text(
+            'Si continuás, este teléfono dejará de recibir avisos cuando cierres sesión. Podrás volver a vincularlo después.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Desvincular'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    final success = await coordinator.setPersistentEnrollment(enabled);
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? enabled
+                    ? 'Avisos sin sesión activados en este teléfono.'
+                    : 'El teléfono fue desvinculado.'
+              : coordinator.message ?? 'No se pudo actualizar el enrolamiento.',
+        ),
+      ),
+    );
+  }
+}
+
+String _expirationText(DateTime? value) {
+  if (value == null) return '';
+  final argentina = value.toUtc().subtract(const Duration(hours: 3));
+  String two(int number) => number.toString().padLeft(2, '0');
+  return ' Se renueva al ingresar y vence el ${two(argentina.day)}/${two(argentina.month)}/${argentina.year}.';
 }
 
 class _PushStatusCard extends StatelessWidget {

@@ -73,6 +73,9 @@ class _SessionInterceptor extends Interceptor {
     return isMutation && !options.path.endsWith('/auth/login');
   }
 
+  bool _isDeviceCredentialRequest(RequestOptions options) =>
+      options.extra['deviceCredentialRequest'] == true;
+
   @override
   void onRequest(
     RequestOptions options,
@@ -89,15 +92,17 @@ class _SessionInterceptor extends Interceptor {
       return;
     }
 
-    final cookie = await sessionStore.readSessionCookie();
-    if (cookie != null && cookie.isNotEmpty) {
-      options.headers['Cookie'] = '$cookieName=$cookie';
-    }
+    if (!_isDeviceCredentialRequest(options)) {
+      final cookie = await sessionStore.readSessionCookie();
+      if (cookie != null && cookie.isNotEmpty) {
+        options.headers['Cookie'] = '$cookieName=$cookie';
+      }
 
-    if (_requiresCsrf(options)) {
-      final csrf = await sessionStore.readCsrfToken();
-      if (csrf != null && csrf.isNotEmpty) {
-        options.headers[csrfHeader] = csrf;
+      if (_requiresCsrf(options)) {
+        final csrf = await sessionStore.readCsrfToken();
+        if (csrf != null && csrf.isNotEmpty) {
+          options.headers[csrfHeader] = csrf;
+        }
       }
     }
     handler.next(options);
@@ -108,24 +113,27 @@ class _SessionInterceptor extends Interceptor {
     Response<dynamic> response,
     ResponseInterceptorHandler handler,
   ) async {
-    if (response.statusCode == 401) {
+    final deviceRequest = _isDeviceCredentialRequest(response.requestOptions);
+    if (response.statusCode == 401 && !deviceRequest) {
       await sessionStore.clear();
       onUnauthorized?.call();
-    } else if (response.statusCode == 403) {
+    } else if (response.statusCode == 403 && !deviceRequest) {
       onForbidden?.call();
     }
-    final cookies = response.headers.map['set-cookie'] ?? const <String>[];
-    for (final header in cookies) {
-      final match = RegExp(
-        '^${RegExp.escape(cookieName)}=([^;]*)',
-        caseSensitive: true,
-      ).firstMatch(header);
-      if (match == null) continue;
-      final value = match.group(1) ?? '';
-      if (value.isEmpty) {
-        await sessionStore.clear();
-      } else {
-        await sessionStore.writeSessionCookie(value);
+    if (!deviceRequest) {
+      final cookies = response.headers.map['set-cookie'] ?? const <String>[];
+      for (final header in cookies) {
+        final match = RegExp(
+          '^${RegExp.escape(cookieName)}=([^;]*)',
+          caseSensitive: true,
+        ).firstMatch(header);
+        if (match == null) continue;
+        final value = match.group(1) ?? '';
+        if (value.isEmpty) {
+          await sessionStore.clear();
+        } else {
+          await sessionStore.writeSessionCookie(value);
+        }
       }
     }
     handler.next(response);

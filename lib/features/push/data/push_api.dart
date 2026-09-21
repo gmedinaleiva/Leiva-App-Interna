@@ -31,6 +31,61 @@ class PushApi {
     ensureApiSuccess(response);
   }
 
+  Future<PersistentEnrollment> enablePersistentEnrollment(
+    String installationId,
+    String idempotencyKey,
+  ) async => PersistentEnrollment.fromJson(
+    apiData(
+      await _dio.post<dynamic>(
+        'push/installations/$installationId/persistent-enrollment',
+        data: const {'consent': true, 'consent_version': '1'},
+        options: Options(
+          contentType: Headers.jsonContentType,
+          headers: {'Idempotency-Key': idempotencyKey},
+        ),
+      ),
+    ),
+  );
+
+  Future<DeviceEnrollmentStatus> deviceStatus(
+    String installationId,
+    String credential,
+  ) async => DeviceEnrollmentStatus.fromJson(
+    apiData(
+      await _dio.get<dynamic>(
+        'push/device/installations/$installationId',
+        options: _deviceOptions(credential),
+      ),
+    ),
+  );
+
+  Future<void> refreshDeviceToken(
+    String installationId,
+    String credential,
+    String idempotencyKey,
+    DeviceTokenRefreshDraft draft,
+  ) async {
+    ensureApiSuccess(
+      await _dio.put<dynamic>(
+        'push/device/installations/$installationId/token',
+        data: draft.toJson(),
+        options: _deviceOptions(
+          credential,
+          headers: {'Idempotency-Key': idempotencyKey},
+        ),
+      ),
+    );
+  }
+
+  Future<void> revokeDevice(String installationId, String credential) async {
+    ensureApiSuccess(
+      await _dio.delete<dynamic>(
+        'push/device/installations/$installationId',
+        options: _deviceOptions(credential),
+      ),
+    );
+  }
+
   Future<NotificationPage> notifications({
     String? cursor,
     bool unreadOnly = false,
@@ -78,4 +133,14 @@ class PushApi {
       ),
     );
   }
+
+  Options _deviceOptions(String credential, {Map<String, dynamic>? headers}) =>
+      Options(
+        contentType: Headers.jsonContentType,
+        headers: <String, dynamic>{
+          'Authorization': 'Device $credential',
+          ...?headers,
+        },
+        extra: const {'deviceCredentialRequest': true},
+      );
 }

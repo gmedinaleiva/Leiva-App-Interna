@@ -33,6 +33,8 @@ class PushInstallation {
     this.lastRegisteredAt,
     this.lastSuccessAt,
     this.lastErrorCode,
+    this.persistentEnrollment = false,
+    this.credentialExpiresAt,
   });
 
   factory PushInstallation.fromJson(
@@ -50,6 +52,10 @@ class PushInstallation {
     ),
     lastSuccessAt: DateTime.tryParse(json['last_success_at'] as String? ?? ''),
     lastErrorCode: json['last_error_code'] as String?,
+    persistentEnrollment: json['persistent_enrollment'] as bool? ?? false,
+    credentialExpiresAt: DateTime.tryParse(
+      json['credential_expires_at'] as String? ?? '',
+    ),
   );
 
   final String installationId;
@@ -62,6 +68,68 @@ class PushInstallation {
   final DateTime? lastRegisteredAt;
   final DateTime? lastSuccessAt;
   final String? lastErrorCode;
+  final bool persistentEnrollment;
+  final DateTime? credentialExpiresAt;
+}
+
+class PersistentEnrollment {
+  const PersistentEnrollment({
+    required this.installation,
+    required this.deviceCredential,
+    required this.credentialScheme,
+    required this.credentialExpiresAt,
+  });
+
+  factory PersistentEnrollment.fromJson(Map<String, dynamic> json) =>
+      PersistentEnrollment(
+        installation: PushInstallation.fromJson(
+          json['installation'] as Map<String, dynamic>,
+        ),
+        deviceCredential: json['device_credential'] as String,
+        credentialScheme: json['credential_scheme'] as String? ?? 'Device',
+        credentialExpiresAt: DateTime.parse(
+          json['credential_expires_at'] as String,
+        ),
+      );
+
+  final PushInstallation installation;
+  final String deviceCredential;
+  final String credentialScheme;
+  final DateTime credentialExpiresAt;
+}
+
+class DeviceEnrollmentStatus {
+  const DeviceEnrollmentStatus({
+    required this.installationId,
+    required this.persistentEnrollment,
+    required this.permissionStatus,
+    required this.notificationsEnabled,
+    required this.categories,
+    required this.credentialExpiresAt,
+    required this.lastRegisteredAt,
+  });
+
+  factory DeviceEnrollmentStatus.fromJson(Map<String, dynamic> json) =>
+      DeviceEnrollmentStatus(
+        installationId: json['installation_id'] as String,
+        persistentEnrollment: json['persistent_enrollment'] as bool? ?? false,
+        permissionStatus:
+            json['permission_status'] as String? ?? 'not_determined',
+        notificationsEnabled: json['notifications_enabled'] as bool? ?? false,
+        categories: (json['categories'] as List? ?? const []).cast<String>(),
+        credentialExpiresAt: DateTime.parse(
+          json['credential_expires_at'] as String,
+        ),
+        lastRegisteredAt: DateTime.parse(json['last_registered_at'] as String),
+      );
+
+  final String installationId;
+  final bool persistentEnrollment;
+  final String permissionStatus;
+  final bool notificationsEnabled;
+  final List<String> categories;
+  final DateTime credentialExpiresAt;
+  final DateTime lastRegisteredAt;
 }
 
 class PushStatus {
@@ -107,6 +175,30 @@ class PushInstallationDraft {
     'token': token,
     'platform': 'android',
     'device_name': deviceName,
+    'app_version': appVersion,
+    'permission_status': permissionStatus,
+    'notifications_enabled': notificationsEnabled,
+    'categories': categories,
+  };
+}
+
+class DeviceTokenRefreshDraft {
+  const DeviceTokenRefreshDraft({
+    required this.token,
+    required this.permissionStatus,
+    required this.notificationsEnabled,
+    required this.categories,
+    this.appVersion,
+  });
+
+  final String token;
+  final String? appVersion;
+  final String permissionStatus;
+  final bool notificationsEnabled;
+  final List<String> categories;
+
+  Map<String, dynamic> toJson() => {
+    'token': token,
     'app_version': appVersion,
     'permission_status': permissionStatus,
     'notifications_enabled': notificationsEnabled,

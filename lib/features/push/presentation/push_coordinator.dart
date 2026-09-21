@@ -120,7 +120,12 @@ class PushCoordinator extends ChangeNotifier {
   PushTarget? _pendingTarget;
   String? _installationId;
   String? _token;
-  bool _started = false;
+  StoredDeviceEnrollment? _deviceEnrollment;
+  DeviceEnrollmentStatus? deviceEnrollmentStatus;
+  bool _authenticated = false;
+  bool _authenticatedStarted = false;
+  bool _deviceModeStarted = false;
+  bool _persistentRotatedForSession = false;
   bool _firebaseReady = false;
 
   FirebaseMessaging get _messaging =>
@@ -141,6 +146,9 @@ class PushCoordinator extends ChangeNotifier {
 
   bool get canConfigure =>
       _firebaseReady && status?.provider.configured == true;
+  bool get persistentEnrollmentEnabled => _deviceEnrollment != null;
+  DateTime? get persistentEnrollmentExpiresAt =>
+      _deviceEnrollment?.expiresAt.toLocal();
 
   void attachNavigationHandler(void Function(PushTarget target) handler) {
     _navigationHandler = handler;
@@ -153,14 +161,52 @@ class PushCoordinator extends ChangeNotifier {
 
   void detachNavigationHandler() => _navigationHandler = null;
 
+  Future<void> startUnauthenticated({bool force = false}) async {
+    if (_deviceModeStarted && !force) return;
+    _deviceModeStarted = true;
+    try {
+      _installationId ??= await _installationStore.readOrCreate();
+      _deviceEnrollment = await _installationStore.readEnrollment();
+      if (_deviceEnrollment == null) return;
+      await _initializeLocalNotifications();
+      _firebaseReady = await _initializeFirebase();
+      if (!_firebaseReady) return;
+      await _bindFirebaseStreams();
+      deviceEnrollmentStatus = await gateway.deviceStatus(
+        _installationId!,
+        _deviceEnrollment!.credential,
+      );
+      if (!deviceEnrollmentStatus!.persistentEnrollment) {
+        await _clearPersistentEnrollment();
+        return;
+      }
+      selectedCategories = {...deviceEnrollmentStatus!.categories};
+      _token = await _messaging.getToken();
+      if (_token != null && _token!.length >= 32) {
+        await _refreshTokenWithDeviceCredential(_token!);
+      }
+      final initialMessage = await _messaging.getInitialMessage();
+      if (initialMessage != null) _openMessage(initialMessage);
+    } on ApiFailure catch (error) {
+      if (const {401, 403, 409}.contains(error.statusCode)) {
+        await _clearPersistentEnrollment();
+      }
+    } catch (_) {
+      // Se reintenta al abrir la app o después del próximo login.
+    }
+  }
+
   Future<void> startAuthenticated({bool force = false}) async {
-    if (_started && !force) return;
-    _started = true;
+    if (_authenticatedStarted && !force) return;
+    if (!_authenticated) _persistentRotatedForSession = false;
+    _authenticated = true;
+    _authenticatedStarted = true;
     state = PushClientState.loading;
     message = null;
     notifyListeners();
     try {
       _installationId ??= await _installationStore.readOrCreate();
+      _deviceEnrollment = await _installationStore.readEnrollment();
       await _initializeLocalNotifications();
       await refreshInbox(force: true);
       status = await gateway.status();
@@ -208,6 +254,9 @@ class PushCoordinator extends ChangeNotifier {
         permissionStatus: permission,
         notificationsEnabled: installation?.notificationsEnabled ?? true,
       );
+      if (_deviceEnrollment != null && !_persistentRotatedForSession) {
+        await _rotatePersistentEnrollment();
+      }
       final initialMessage = await _messaging.getInitialMessage();
       if (initialMessage != null) _openMessage(initialMessage);
     } on ApiFailure catch (error) {
@@ -388,6 +437,98 @@ class PushCoordinator extends ChangeNotifier {
     }
   }
 
+  Future<bool> setPersistentEnrollment(bool enabled) async {
+    if (enabled) return _enablePersistentEnrollment();
+    return _disablePersistentEnrollment();
+  }
+
+  Future<bool> _enablePersistentEnrollment() async {
+    final id = installation?.installationId;
+    if (!_authenticated || id == null) {
+      message = 'Primero debe registrarse este teléfono con tu sesión.';
+      notifyListeners();
+      return false;
+    }
+    state = PushClientState.loading;
+    message = null;
+    notifyListeners();
+    try {
+      final enrolled = await gateway.enablePersistentEnrollment(
+        id,
+        newIdempotencyKey(),
+      );
+      await _savePersistentEnrollment(enrolled);
+      installation = enrolled.installation;
+      _persistentRotatedForSession = true;
+      state = PushClientState.registered;
+      message = 'Este teléfono seguirá recibiendo avisos al cerrar sesión.';
+      notifyListeners();
+      return true;
+    } on ApiFailure catch (error) {
+      state = PushClientState.error;
+      message = error.statusCode == 503
+          ? 'Sistemas todavía no habilitó los avisos sin sesión.'
+          : error.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> _disablePersistentEnrollment() async {
+    final enrollment = _deviceEnrollment;
+    final id = _installationId ?? await _installationStore.readOrCreate();
+    if (enrollment == null) return true;
+    state = PushClientState.loading;
+    message = null;
+    notifyListeners();
+    try {
+      await gateway.revokeDevice(id, enrollment.credential);
+      await _clearPersistentEnrollment();
+      if (_authenticated && _token != null) {
+        await _register(
+          token: _token!,
+          permissionStatus: 'authorized',
+          notificationsEnabled: true,
+        );
+      }
+      message = 'El teléfono quedó desvinculado para avisos sin sesión.';
+      notifyListeners();
+      return true;
+    } on ApiFailure catch (error) {
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await _clearPersistentEnrollment();
+        message = 'El enrolamiento ya no estaba vigente.';
+        notifyListeners();
+        return true;
+      }
+      state = PushClientState.error;
+      message = error.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> beforeLogout() async {
+    _deviceEnrollment = await _installationStore.readEnrollment();
+    if (_deviceEnrollment == null) {
+      await unregister();
+      return;
+    }
+    enterUnauthenticatedMode();
+  }
+
+  void enterUnauthenticatedMode() {
+    _authenticated = false;
+    _authenticatedStarted = false;
+    _persistentRotatedForSession = false;
+    notifications = const [];
+    unreadCount = 0;
+    nextNotificationCursor = null;
+    inboxError = null;
+    _lastInboxRefresh = null;
+    notifyListeners();
+  }
+
   Future<void> unregister() async {
     final id = _installationId ?? await _installationStore.readOrCreate();
     try {
@@ -396,7 +537,10 @@ class PushCoordinator extends ChangeNotifier {
       if (error.statusCode != 404 && error.statusCode != 401) rethrow;
     } finally {
       await _cancelStreams();
-      _started = false;
+      _authenticated = false;
+      _authenticatedStarted = false;
+      _deviceModeStarted = false;
+      _persistentRotatedForSession = false;
       installation = null;
       state = PushClientState.idle;
       notifyListeners();
@@ -426,6 +570,71 @@ class PushCoordinator extends ChangeNotifier {
         : PushClientState.disabled;
     message = null;
     notifyListeners();
+  }
+
+  Future<void> _rotatePersistentEnrollment() async {
+    final id = installation?.installationId;
+    if (id == null || _deviceEnrollment == null) return;
+    try {
+      final enrolled = await gateway.enablePersistentEnrollment(
+        id,
+        newIdempotencyKey(),
+      );
+      await _savePersistentEnrollment(enrolled);
+      installation = enrolled.installation;
+      _persistentRotatedForSession = true;
+    } on ApiFailure catch (error) {
+      if (error.statusCode == 404 || error.statusCode == 409) {
+        await _clearPersistentEnrollment();
+      }
+    }
+  }
+
+  Future<void> _savePersistentEnrollment(
+    PersistentEnrollment enrollment,
+  ) async {
+    final stored = StoredDeviceEnrollment(
+      credential: enrollment.deviceCredential,
+      scheme: enrollment.credentialScheme,
+      expiresAt: enrollment.credentialExpiresAt,
+    );
+    await _installationStore.writeEnrollment(stored);
+    _deviceEnrollment = stored;
+    deviceEnrollmentStatus = DeviceEnrollmentStatus(
+      installationId: enrollment.installation.installationId,
+      persistentEnrollment: true,
+      permissionStatus: enrollment.installation.permissionStatus,
+      notificationsEnabled: enrollment.installation.notificationsEnabled,
+      categories: enrollment.installation.categories,
+      credentialExpiresAt: enrollment.credentialExpiresAt,
+      lastRegisteredAt:
+          enrollment.installation.lastRegisteredAt ?? DateTime.now().toUtc(),
+    );
+  }
+
+  Future<void> _clearPersistentEnrollment() async {
+    await _installationStore.clearEnrollment();
+    _deviceEnrollment = null;
+    deviceEnrollmentStatus = null;
+  }
+
+  Future<void> _refreshTokenWithDeviceCredential(String token) async {
+    final enrollment = _deviceEnrollment;
+    final deviceStatus = deviceEnrollmentStatus;
+    if (enrollment == null || deviceStatus == null) return;
+    final packageInfo = await PackageInfo.fromPlatform();
+    await gateway.refreshDeviceToken(
+      deviceStatus.installationId,
+      enrollment.credential,
+      newIdempotencyKey(),
+      DeviceTokenRefreshDraft(
+        token: token,
+        appVersion: '${packageInfo.version}+${packageInfo.buildNumber}',
+        permissionStatus: deviceStatus.permissionStatus,
+        notificationsEnabled: deviceStatus.notificationsEnabled,
+        categories: deviceStatus.categories,
+      ),
+    );
   }
 
   Future<bool> _initializeFirebase() async {
@@ -472,11 +681,19 @@ class PushCoordinator extends ChangeNotifier {
       if (token.length < 32) return;
       _token = token;
       try {
-        await _register(
-          token: token,
-          permissionStatus: 'authorized',
-          notificationsEnabled: installation?.notificationsEnabled ?? true,
-        );
+        if (_authenticated) {
+          await _register(
+            token: token,
+            permissionStatus: 'authorized',
+            notificationsEnabled: installation?.notificationsEnabled ?? true,
+          );
+        } else {
+          await _refreshTokenWithDeviceCredential(token);
+        }
+      } on ApiFailure catch (error) {
+        if (!_authenticated && const {401, 403, 409}.contains(error.statusCode)) {
+          await _clearPersistentEnrollment();
+        }
       } catch (_) {
         // Se reintentará al abrir Ajustes o en el próximo inicio de sesión.
       }
@@ -490,7 +707,7 @@ class PushCoordinator extends ChangeNotifier {
   }
 
   Future<void> _showForegroundMessage(RemoteMessage remoteMessage) async {
-    unawaited(refreshInbox(force: true));
+    if (_authenticated) unawaited(refreshInbox(force: true));
     final notification = remoteMessage.notification;
     if (notification == null) return;
     final target = PushTarget.parse(remoteMessage.data['deep_link']);

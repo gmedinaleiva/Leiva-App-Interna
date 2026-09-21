@@ -8,6 +8,21 @@ abstract interface class PushGateway {
     PushInstallationDraft draft,
   );
   Future<void> unregister(String installationId);
+  Future<PersistentEnrollment> enablePersistentEnrollment(
+    String installationId,
+    String idempotencyKey,
+  );
+  Future<DeviceEnrollmentStatus> deviceStatus(
+    String installationId,
+    String credential,
+  );
+  Future<void> refreshDeviceToken(
+    String installationId,
+    String credential,
+    String idempotencyKey,
+    DeviceTokenRefreshDraft draft,
+  );
+  Future<void> revokeDevice(String installationId, String credential);
   Future<NotificationPage> notifications({
     String? cursor,
     bool unreadOnly = false,
@@ -35,6 +50,35 @@ class PushRepository implements PushGateway {
   @override
   Future<void> unregister(String installationId) =>
       _api.unregister(installationId);
+
+  @override
+  Future<PersistentEnrollment> enablePersistentEnrollment(
+    String installationId,
+    String idempotencyKey,
+  ) => _api.enablePersistentEnrollment(installationId, idempotencyKey);
+
+  @override
+  Future<DeviceEnrollmentStatus> deviceStatus(
+    String installationId,
+    String credential,
+  ) => _api.deviceStatus(installationId, credential);
+
+  @override
+  Future<void> refreshDeviceToken(
+    String installationId,
+    String credential,
+    String idempotencyKey,
+    DeviceTokenRefreshDraft draft,
+  ) => _api.refreshDeviceToken(
+    installationId,
+    credential,
+    idempotencyKey,
+    draft,
+  );
+
+  @override
+  Future<void> revokeDevice(String installationId, String credential) =>
+      _api.revokeDevice(installationId, credential);
 
   @override
   Future<NotificationPage> notifications({

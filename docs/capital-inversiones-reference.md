@@ -1,5 +1,17 @@
 # Referencia vigente: Capital Inversiones Stage
 
+## Actualización 21/09/2026
+
+La referencia funcional consultada para notificaciones persistentes es el
+commit `39fb30e` de `WSL-DEV`, publicado documentalmente en `958f902`. Expone
+OpenAPI `0.8.0-pilot`, 55 rutas, y agrega enrolamiento consentido del
+dispositivo con credencial `Device` independiente de la cookie. Stage informa
+FCM configurado y migración `d7f9a1b3c5e7` aplicada.
+
+Flutter implementa este contrato sin copiar credenciales del servidor. La
+cuenta de servicio permanece exclusivamente en Stage y `google-services.json`
+continúa ignorado por Git en el repositorio Flutter.
+
 ## Verificación vigente de la API móvil
 
 El 19/09/2026 el anfitrión publicó como corte funcional de referencia

@@ -33,11 +33,13 @@ class AuthController extends ChangeNotifier {
   bool biometricAvailable = false;
   bool biometricEnabled = false;
   Future<void> Function()? beforeLogout;
+  void Function()? onSessionEnded;
   bool _refreshingSession = false;
 
   void invalidateSession() {
     session = null;
     status = AuthStatus.unauthenticated;
+    onSessionEnded?.call();
     message = 'La sesión venció. Ingresá nuevamente.';
     notifyListeners();
   }
@@ -66,6 +68,7 @@ class AuthController extends ChangeNotifier {
       session = await _repository.restoreSession();
       if (session == null) {
         status = AuthStatus.unauthenticated;
+        onSessionEnded?.call();
       } else {
         status = biometricEnabled
             ? AuthStatus.biometricLocked
@@ -177,6 +180,7 @@ class AuthController extends ChangeNotifier {
     } finally {
       session = null;
       status = AuthStatus.unauthenticated;
+      onSessionEnded?.call();
       message = null;
       notifyListeners();
     }
@@ -189,6 +193,7 @@ class AuthController extends ChangeNotifier {
     } finally {
       session = null;
       status = AuthStatus.unauthenticated;
+      onSessionEnded?.call();
       message = null;
       notifyListeners();
     }
