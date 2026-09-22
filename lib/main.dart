@@ -191,6 +191,8 @@ class _LeivaAppState extends State<LeivaApp> {
       builder: (context, _) => MaterialApp(
         title: 'Leiva Interna',
         debugShowCheckedModeBanner: false,
+        builder: (context, child) =>
+            SafeArea(top: false, child: child ?? const SizedBox.shrink()),
         theme: ThemeData(
           useMaterial3: true,
           fontFamily: 'Inter',

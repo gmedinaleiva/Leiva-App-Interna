@@ -193,9 +193,13 @@ void main() {
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
+    tester.view.padding = const FakeViewPadding(bottom: 48);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 48);
     tester.platformDispatcher.textScaleFactorTestValue = 1.30;
     addTearDown(() {
       tester.binding.setSurfaceSize(null);
+      tester.view.resetPadding();
+      tester.view.resetViewPadding();
       tester.platformDispatcher.clearTextScaleFactorTestValue();
     });
     final auth = _FakeAuthGateway(
@@ -233,6 +237,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Hola, Usuario Piloto'), findsOneWidget);
+    final safeBottom =
+        800 - tester.view.padding.bottom / tester.view.devicePixelRatio;
+    expect(
+      tester.getBottomRight(find.byType(NavigationBar)).dy,
+      lessThanOrEqualTo(safeBottom),
+    );
     expect(tester.takeException(), isNull);
 
     for (final label in ['Módulos', 'Gestiones', 'Perfil', 'Inicio']) {
