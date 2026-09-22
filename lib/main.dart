@@ -463,6 +463,9 @@ class _LoginScreenState extends State<LoginScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 850;
+          final compactMobile =
+              !wide &&
+              (constraints.maxWidth < 390 || constraints.maxHeight < 780);
           final submitting =
               widget.authController.status == AuthStatus.submittingCredentials;
           final form = _LoginForm(
@@ -483,6 +486,7 @@ class _LoginScreenState extends State<LoginScreen> {
             onUseBiometricsChanged: (value) =>
                 setState(() => _useBiometrics = value),
             mobile: !wide,
+            compactMobile: compactMobile,
           );
           return Container(
             decoration: const BoxDecoration(
@@ -537,7 +541,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: IntrinsicHeight(
                           child: Column(
                             children: [
-                              _mobileHero(),
+                              _mobileHero(compact: compactMobile),
                               Expanded(child: form),
                             ],
                           ),
@@ -551,22 +555,29 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _mobileHero() => Container(
+  Widget _mobileHero({required bool compact}) => Container(
     width: double.infinity,
-    padding: const EdgeInsets.fromLTRB(26, 22, 26, 24),
+    padding: EdgeInsets.fromLTRB(
+      compact ? 22 : 26,
+      compact ? 14 : 22,
+      compact ? 22 : 26,
+      compact ? 16 : 24,
+    ),
     decoration: const BoxDecoration(
       gradient: LinearGradient(colors: [Color(0xFFE11D25), Color(0xFFC70F19)]),
     ),
-    child: const Column(
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LeivaBrand(light: true, compact: true),
-        SizedBox(height: 30),
+        const LeivaBrand(light: true, compact: true),
+        SizedBox(height: compact ? 10 : 30),
         Text(
-          'Todo Leiva, en un solo lugar.',
+          compact ? 'Todo Leiva' : 'Todo Leiva, en un solo lugar.',
+          maxLines: compact ? 1 : 2,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: Colors.white,
-            fontSize: 24,
+            fontSize: compact ? 18 : 24,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
           ),
@@ -685,6 +696,7 @@ class _LoginForm extends StatelessWidget {
     required this.onRememberUsernameChanged,
     required this.onUseBiometricsChanged,
     this.mobile = false,
+    this.compactMobile = false,
   });
 
   final GlobalKey<FormState> formKey;
@@ -701,16 +713,17 @@ class _LoginForm extends StatelessWidget {
   final ValueChanged<bool> onRememberUsernameChanged;
   final ValueChanged<bool> onUseBiometricsChanged;
   final bool mobile;
+  final bool compactMobile;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 520),
+      constraints: BoxConstraints(minHeight: compactMobile ? 0 : 520),
       padding: EdgeInsets.fromLTRB(
-        mobile ? 26 : 42,
-        mobile ? 30 : 42,
-        mobile ? 26 : 42,
-        mobile ? 92 : 42,
+        mobile ? (compactMobile ? 22 : 26) : 42,
+        mobile ? (compactMobile ? 18 : 30) : 42,
+        mobile ? (compactMobile ? 22 : 26) : 42,
+        mobile ? (compactMobile ? 14 : 24) : 42,
       ),
       color: Colors.white,
       child: Center(
@@ -722,11 +735,11 @@ class _LoginForm extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Bienvenido',
                   style: TextStyle(
                     color: AppColors.ink,
-                    fontSize: 30,
+                    fontSize: compactMobile ? 26 : 30,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.7,
                   ),
@@ -736,7 +749,7 @@ class _LoginForm extends StatelessWidget {
                   'Ingresá con tu cuenta corporativa.',
                   style: TextStyle(color: AppColors.muted, fontSize: 15),
                 ),
-                const SizedBox(height: 30),
+                SizedBox(height: compactMobile ? 20 : 30),
                 const _FieldLabel('Usuario'),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -751,7 +764,7 @@ class _LoginForm extends StatelessWidget {
                       ? 'Ingresá tu usuario'
                       : null,
                 ),
-                const SizedBox(height: 20),
+                SizedBox(height: compactMobile ? 14 : 20),
                 const _FieldLabel('Contraseña'),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -831,7 +844,7 @@ class _LoginForm extends StatelessWidget {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
+                SizedBox(height: compactMobile ? 12 : 20),
                 FilledButton(
                   key: const Key('loginButton'),
                   onPressed: submitting ? null : onLogin,
@@ -852,7 +865,7 @@ class _LoginForm extends StatelessWidget {
                           ],
                         ),
                 ),
-                const SizedBox(height: 22),
+                SizedBox(height: compactMobile ? 12 : 22),
                 const Center(
                   child: Text(
                     'Conexión segura con el portal Leiva',

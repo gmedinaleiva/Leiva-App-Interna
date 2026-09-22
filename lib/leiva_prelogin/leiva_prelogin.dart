@@ -96,7 +96,10 @@ class _LeivaPreloginState extends State<LeivaPrelogin>
 
   @override
   Widget build(BuildContext context) {
-    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    final media = MediaQuery.of(context);
+    final keyboardVisible = media.viewInsets.bottom > 0;
+    final footerHeight = (media.size.height * .08).clamp(64.0, 96.0);
+    final footerSlotHeight = footerHeight + media.padding.bottom;
     return ColoredBox(
       color: Colors.white,
       child: AnimatedBuilder(
@@ -109,11 +112,21 @@ class _LeivaPreloginState extends State<LeivaPrelogin>
           return Stack(
             fit: StackFit.expand,
             children: [
-              IgnorePointer(
-                ignoring: !ready,
-                child: ExcludeSemantics(
-                  excluding: !ready,
-                  child: Opacity(opacity: reveal, child: login),
+              Positioned.fill(
+                bottom: keyboardVisible ? 0 : footerSlotHeight,
+                child: IgnorePointer(
+                  ignoring: !ready,
+                  child: ExcludeSemantics(
+                    excluding: !ready,
+                    child: Opacity(
+                      opacity: reveal,
+                      child: MediaQuery.removePadding(
+                        context: context,
+                        removeBottom: true,
+                        child: login!,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               if (!ready)
@@ -131,11 +144,22 @@ class _LeivaPreloginState extends State<LeivaPrelogin>
               // Same instance/trajectory before and after login; no route swap.
               // Hide while typing, so it cannot cover the keyboard or controls.
               if (!keyboardVisible)
-                KeyedSubtree(
-                  key: const ValueKey('leiva-persistent-footer'),
-                  child: IgnorePointer(
-                    child: ExcludeSemantics(
-                      child: _canvas(_Footer(seconds: seconds)),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: footerSlotHeight,
+                  child: KeyedSubtree(
+                    key: const ValueKey('leiva-persistent-footer'),
+                    child: IgnorePointer(
+                      child: ExcludeSemantics(
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            bottom: media.padding.bottom,
+                          ),
+                          child: _ResponsiveFooter(seconds: seconds),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -171,11 +195,13 @@ double _ease(double x) {
 
 Widget _canvas(Widget child) => SizedBox.expand(
   child: SafeArea(
-    child: ClipRect(
-      child: FittedBox(
-        fit: BoxFit.cover,
-        alignment: Alignment.center,
-        child: SizedBox(width: 720, height: 1600, child: child),
+    child: LayoutBuilder(
+      builder: (context, constraints) => ClipRect(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          alignment: Alignment.center,
+          child: SizedBox(width: 720, height: 1600, child: child),
+        ),
       ),
     ),
   ),
@@ -358,41 +384,57 @@ class _Unit extends StatelessWidget {
   );
 }
 
-class _Footer extends StatelessWidget {
-  const _Footer({required this.seconds});
+class _ResponsiveFooter extends StatelessWidget {
+  const _ResponsiveFooter({required this.seconds});
   final double seconds;
 
   @override
   Widget build(BuildContext context) {
     final p = _smooth((seconds - .10) / 3.80);
-    final x = -124 + 696 * p;
-    // Flutter's positive rotation is clockwise; PIL reference was counterclockwise.
-    final angle = -(572 - x) / 56;
-    return ClipRect(
-      child: Stack(
-        children: [
-          _at(
-            1465,
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _label('leivahnos.com.ar', 22),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final badgeSize = (constraints.maxHeight * .78).clamp(58.0, 76.0);
+        final finalX = constraints.maxWidth - badgeSize - 18;
+        final x = -badgeSize - 8 + (finalX + badgeSize + 8) * p;
+        final angle = -(finalX - x) / (badgeSize / 2);
+        return ColoredBox(
+          color: Colors.white,
+          child: ClipRect(
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 20,
+                  right: badgeSize + 42,
+                  bottom: 14,
+                  child: const Text(
+                    'leivahnos.com.ar',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'LeivaRobotoCondensed',
+                      fontVariations: [FontVariation('wght', 600)],
+                      fontSize: 13,
+                      color: _red,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  key: const ValueKey('leiva-tech-badge'),
+                  left: x,
+                  bottom: 8 + 4 * math.sin(math.pi * p),
+                  width: badgeSize,
+                  height: badgeSize,
+                  child: Transform.rotate(
+                    angle: angle,
+                    child: _asset('leiva_tech.png'),
+                  ),
+                ),
+              ],
             ),
-            left: 40,
-            width: 280,
           ),
-          Positioned(
-            key: const ValueKey('leiva-tech-badge'),
-            left: x,
-            top: 1375 - 8 * math.sin(math.pi * p),
-            width: 112,
-            height: 112,
-            child: Transform.rotate(
-              angle: angle,
-              child: _asset('leiva_tech.png'),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

@@ -188,6 +188,73 @@ void main() {
     }
     expect(find.byKey(const Key('cameraReceiptButton')), findsOneWidget);
   });
+
+  testWidgets('se adapta a una pantalla compacta con texto ampliado', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.30;
+    addTearDown(() {
+      tester.binding.setSurfaceSize(null);
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+    });
+    final auth = _FakeAuthGateway(
+      capabilities: const AppCapabilities({
+        'vehicle_reservations': {'view': true, 'create': true},
+        'room_reservations': {'view': true, 'create': true},
+        'parking_requests': {'view': true, 'create': true},
+        'my_expenses': {
+          'view': true,
+          'upload': true,
+          'benefits': true,
+          'travel': true,
+          'advances': true,
+        },
+      }),
+    );
+    final controller = AuthController(auth);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      LeivaApp(
+        authController: controller,
+        roomsGateway: _FakeRoomsGateway(),
+        vehiclesGateway: _FakeVehiclesGateway(),
+        parkingGateway: _FakeParkingGateway(),
+        expensesGateway: _FakeExpensesGateway(),
+        skipPrelogin: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('usernameField')), 'piloto');
+    await tester.enterText(find.byKey(const Key('passwordField')), 'secreto');
+    await tester.ensureVisible(find.byKey(const Key('loginButton')));
+    await tester.tap(find.byKey(const Key('loginButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hola, Usuario Piloto'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    for (final label in ['Módulos', 'Gestiones', 'Perfil', 'Inicio']) {
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    for (final module in [
+      'Reservas de vehículos',
+      'Salas',
+      'Estacionamiento',
+      'Mis gastos',
+    ]) {
+      await tester.ensureVisible(find.text(module));
+      await tester.tap(find.text(module));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+    }
+  });
 }
 
 class _FakeAuthGateway implements AuthGateway {
