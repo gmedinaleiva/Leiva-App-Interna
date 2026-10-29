@@ -1178,7 +1178,7 @@ class CreateExpenseScreen extends StatefulWidget {
 }
 
 class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
-  final _idempotencyKey = newIdempotencyKey();
+  var _idempotencyKey = newIdempotencyKey();
   final _formKey = GlobalKey<FormState>();
   final _amount = TextEditingController();
   final _merchant = TextEditingController();
@@ -1196,6 +1196,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   String? _rubric;
   int? _periodId;
   int? _pettyCashFundId;
+  String? _fundingIntent;
   List<PettyCashFund> _pettyCashFunds = const [];
   int? _geosatReservationId;
   String _currency = 'ARS';
@@ -1206,6 +1207,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   String? _error;
 
   bool get _travelAllowed => widget.dashboard.allows('travel');
+  bool get _canChoosePersonalReimbursement =>
+      widget.dashboard.allows('explicit_personal_reimbursement');
+  bool get _isPersonalReimbursement => _fundingIntent == 'reimbursement';
   List<String> get _currentRubrics =>
       _section == 'travel' ? widget.rubrics.travel : widget.rubrics.benefits;
   bool get _isFuel =>
@@ -1269,6 +1273,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       _rubric = _currentRubrics.firstOrNull;
       _periodId = value == 'travel' ? _travelPeriods.firstOrNull?.id : null;
       _pettyCashFundId = null;
+      _fundingIntent = null;
     });
   }
 
@@ -1354,7 +1359,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       setState(() => _error = 'Seleccioná un comprobante.');
       return;
     }
-    if (_section == 'travel' && _periodId == null && _pettyCashFundId == null) {
+    if (_section == 'travel' &&
+        !_isPersonalReimbursement &&
+        _periodId == null &&
+        _pettyCashFundId == null) {
       setState(() => _error = 'Seleccioná una rendición o una Caja chica.');
       return;
     }
@@ -1387,6 +1395,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           fileBytes: _fileBytes ?? await _file!.readAsBytes(),
           periodId: _section == 'travel' ? _periodId : null,
           pettyCashFundId: _section == 'travel' ? _pettyCashFundId : null,
+          fundingIntent: _section == 'travel' && _isPersonalReimbursement
+              ? 'reimbursement'
+              : null,
           merchantName: _expenseNullable(_merchant.text),
           receiptReference: _expenseNullable(_reference.text),
           description: _expenseNullable(_description.text),
@@ -1509,12 +1520,19 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           if (_section == 'travel') ...[
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: _pettyCashFundId == null
+              initialValue: _isPersonalReimbursement
+                  ? 'reimbursement'
+                  : _pettyCashFundId == null
                   ? (_periodId == null ? null : 'period:$_periodId')
                   : 'fund:$_pettyCashFundId',
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Imputación'),
               items: [
+                if (_canChoosePersonalReimbursement)
+                  const DropdownMenuItem(
+                    value: 'reimbursement',
+                    child: Text('Reintegro personal · pagado por mí'),
+                  ),
                 ..._travelPeriods.map(
                   (period) => DropdownMenuItem(
                     value: 'period:${period.id}',
@@ -1535,7 +1553,20 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                 ),
               ],
               onChanged: (value) => setState(() {
-                if (value?.startsWith('fund:') == true) {
+                final previousValue = _isPersonalReimbursement
+                    ? 'reimbursement'
+                    : _pettyCashFundId == null
+                    ? (_periodId == null ? null : 'period:$_periodId')
+                    : 'fund:$_pettyCashFundId';
+                if (value != previousValue) {
+                  _idempotencyKey = newIdempotencyKey();
+                }
+                if (value == 'reimbursement') {
+                  _fundingIntent = 'reimbursement';
+                  _periodId = null;
+                  _pettyCashFundId = null;
+                } else if (value?.startsWith('fund:') == true) {
+                  _fundingIntent = null;
                   _pettyCashFundId = int.tryParse(value!.substring(5));
                   _periodId = null;
                   final fund = _pettyCashFunds
@@ -1543,6 +1574,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                       .firstOrNull;
                   if (fund != null) _currency = fund.currency;
                 } else {
+                  _fundingIntent = null;
                   _periodId = int.tryParse(value?.substring(7) ?? '');
                   _pettyCashFundId = null;
                 }
@@ -1555,6 +1587,13 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
               const SizedBox(height: 8),
               const Text(
                 'El gasto quedará pendiente de autorización del responsable de la Caja chica.',
+                style: TextStyle(color: Color(0xFF667085), fontSize: 12),
+              ),
+            ],
+            if (_isPersonalReimbursement) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'El gasto quedará pendiente de reintegro y no consumirá un adelanto vigente.',
                 style: TextStyle(color: Color(0xFF667085), fontSize: 12),
               ),
             ],
@@ -1999,10 +2038,13 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   late DateTime _date;
   late String? _rubric;
   late int? _periodId;
+  late String _fundingIntent;
   bool _saving = false;
   String? _error;
 
   bool get _travel => widget.record.type == 'travel_expense';
+  bool get _canChoosePersonalReimbursement =>
+      widget.dashboard.allows('explicit_personal_reimbursement');
   List<String> get _rubrics =>
       _travel ? widget.rubrics.travel : widget.rubrics.benefits;
   bool get _isFuel =>
@@ -2041,7 +2083,12 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     _rubric = _rubrics.contains(widget.record.rubric)
         ? widget.record.rubric
         : null;
-    _periodId = _periods.any((item) => item.id == widget.record.periodId)
+    _fundingIntent = widget.record.fundingIntent == 'reimbursement'
+        ? 'reimbursement'
+        : 'auto';
+    _periodId =
+        _fundingIntent == 'auto' &&
+            _periods.any((item) => item.id == widget.record.periodId)
         ? widget.record.periodId
         : (_periods.isEmpty ? null : _periods.first.id);
   }
@@ -2073,7 +2120,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           expenseDate: _date,
           amount: double.parse(_amount.text.replaceAll(',', '.')),
           rubric: _rubric!,
-          periodId: _periodId!,
+          periodId: _periodId,
+          fundingIntent: _fundingIntent,
           merchantName: _expenseNullable(_merchant.text),
           receiptReference: _expenseNullable(_reference.text),
           description: _expenseNullable(_description.text),
@@ -2143,21 +2191,50 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
             validator: (value) => value == null ? 'Seleccioná un rubro' : null,
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<int>(
-            initialValue: _periodId,
-            decoration: const InputDecoration(labelText: 'Rendición'),
-            items: _periods
-                .map(
-                  (value) => DropdownMenuItem(
-                    value: value.id,
-                    child: Text(value.label),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) => setState(() => _periodId = value),
-            validator: (value) =>
-                value == null ? 'Seleccioná una rendición editable' : null,
-          ),
+          if (_travel && _canChoosePersonalReimbursement) ...[
+            DropdownButtonFormField<String>(
+              initialValue: _fundingIntent,
+              decoration: const InputDecoration(labelText: 'Imputación'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'auto',
+                  child: Text('Rendición o adelanto'),
+                ),
+                DropdownMenuItem(
+                  value: 'reimbursement',
+                  child: Text('Reintegro personal · pagado por mí'),
+                ),
+              ],
+              onChanged: (value) => setState(() {
+                _fundingIntent = value ?? 'auto';
+                _periodId = _fundingIntent == 'auto'
+                    ? (_periods.firstOrNull?.id)
+                    : null;
+              }),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (_fundingIntent == 'auto')
+            DropdownButtonFormField<int>(
+              initialValue: _periodId,
+              decoration: const InputDecoration(labelText: 'Rendición'),
+              items: _periods
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value.id,
+                      child: Text(value.label),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => _periodId = value),
+              validator: (value) =>
+                  value == null ? 'Seleccioná una rendición editable' : null,
+            )
+          else
+            const Text(
+              'Este gasto quedará pendiente de reintegro y no consumirá un adelanto vigente.',
+              style: TextStyle(color: Color(0xFF667085), fontSize: 12),
+            ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _purpose,

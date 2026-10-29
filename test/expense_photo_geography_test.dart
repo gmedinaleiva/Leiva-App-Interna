@@ -60,6 +60,41 @@ void main() {
       expect(sent, isTrue);
     });
   }
+  test('personal reimbursement is explicit and does not send a fund', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test/'));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final form = options.data as FormData;
+          final fields = Map<String, String>.fromEntries(form.fields);
+          expect(fields['funding_intent'], 'reimbursement');
+          expect(fields['personal_expense_period_id'], isEmpty);
+          expect(fields['petty_cash_fund_id'], isEmpty);
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 201,
+              data: {
+                'data': {'id': 2, 'type': 'travel_expense', 'status': 'pending'},
+              },
+            ),
+          );
+        },
+      ),
+    );
+    await ExpensesApi(dio).upload(
+      ExpenseUploadDraft(
+        idempotencyKey: 'personal-reimbursement',
+        section: 'travel',
+        expenseDate: DateTime(2026, 10, 29),
+        amount: 100,
+        rubric: 'Combustible',
+        fileName: 'receipt.jpg',
+        fileBytes: Uint8List.fromList([255, 216, 255, 217]),
+        fundingIntent: 'reimbursement',
+      ),
+    );
+  });
   test('trajectory indicator does not require events', () {
     final row = VehicleReservation.fromJson({
       'id': 1,

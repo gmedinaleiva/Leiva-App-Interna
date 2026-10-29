@@ -129,3 +129,12 @@ en `origin/WSL-DEV` (backend funcional `f244b47`). Reservas expone
 con `data.items[{id,name}]`. No hay conversiÃ³n ni consulta externa del catÃ¡logo.
 
 El usuario autorizÃ³ expresamente esta copia Linux en DEV el 29/10/2026.
+
+## Actualización 29/10/2026 · reintegro personal explícito
+
+Referencia consultada tras git fetch origin --prune: $reference en
+origin/WSL-DEV. El contrato funcional fue comunicado por el anfitrión en
+AGENTS 9f12e7c, para backend WSL-DEV e3d9d1: la capacidad
+explicit_personal_reimbursement habilita unding_intent=reimbursement.
+En ese caso la app no debe enviar personal_expense_period_id ni
+petty_cash_fund_id; el servidor resuelve el período de reintegro propio.

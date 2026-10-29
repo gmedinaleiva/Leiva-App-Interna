@@ -146,6 +146,7 @@ class ExpensesApi {
           'currency': 'ARS',
           'rubric': draft.rubric,
           'period_id': draft.periodId,
+          'funding_intent': draft.fundingIntent,
           'merchant_name': draft.merchantName,
           'receipt_reference': draft.receiptReference,
           'description': draft.description,
@@ -211,30 +212,34 @@ class ExpensesApi {
         message: 'No se pudo leer la foto. Volvé a seleccionarla.',
       );
     }
+    final fields = <String, dynamic>{
+      'section': draft.section,
+      'expense_date': _date(draft.expenseDate),
+      'amount': draft.amount.toStringAsFixed(2),
+      'currency': draft.currency,
+      'rubric': draft.rubric,
+      'merchant_name': draft.merchantName ?? '',
+      'receipt_reference': draft.receiptReference ?? '',
+      'description': draft.description ?? '',
+      'fiscal_kind': draft.fiscalKind,
+      'travel_purpose': draft.travelPurpose ?? '',
+      'benefit_name': draft.benefitName ?? '',
+      'benefit_period': draft.benefitPeriod ?? '',
+      'fuel_ticket_time': draft.fuelTicketTime ?? '',
+      'fuel_vehicle_plate': draft.fuelVehiclePlate ?? '',
+      'fuel_province': draft.fuelProvince ?? '',
+      'fuel_city': draft.fuelCity ?? '',
+      'personal_expense_period_id': draft.periodId?.toString() ?? '',
+      'geosat_reservation_id': draft.geosatReservationId?.toString() ?? '',
+      'petty_cash_fund_id': draft.pettyCashFundId?.toString() ?? '',
+      'file': file,
+    };
+    if (draft.fundingIntent != null) {
+      fields['funding_intent'] = draft.fundingIntent;
+    }
     final response = await _dio.post<dynamic>(
       'my-expenses/records',
-      data: FormData.fromMap({
-        'section': draft.section,
-        'expense_date': _date(draft.expenseDate),
-        'amount': draft.amount.toStringAsFixed(2),
-        'currency': draft.currency,
-        'rubric': draft.rubric,
-        'merchant_name': draft.merchantName ?? '',
-        'receipt_reference': draft.receiptReference ?? '',
-        'description': draft.description ?? '',
-        'fiscal_kind': draft.fiscalKind,
-        'travel_purpose': draft.travelPurpose ?? '',
-        'benefit_name': draft.benefitName ?? '',
-        'benefit_period': draft.benefitPeriod ?? '',
-        'fuel_ticket_time': draft.fuelTicketTime ?? '',
-        'fuel_vehicle_plate': draft.fuelVehiclePlate ?? '',
-        'fuel_province': draft.fuelProvince ?? '',
-        'fuel_city': draft.fuelCity ?? '',
-        'personal_expense_period_id': draft.periodId?.toString() ?? '',
-        'geosat_reservation_id': draft.geosatReservationId?.toString() ?? '',
-        'petty_cash_fund_id': draft.pettyCashFundId?.toString() ?? '',
-        'file': file,
-      }),
+      data: FormData.fromMap(fields),
       options: Options(headers: {'Idempotency-Key': draft.idempotencyKey}),
     );
     return ExpenseRecord.fromJson(apiData(response));

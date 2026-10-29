@@ -69,6 +69,7 @@ class ExpenseRecord {
     this.travelPurpose,
     this.benefitName,
     this.geosatReservationId,
+    this.fundingIntent,
   });
 
   factory ExpenseRecord.fromJson(Map<String, dynamic> json) => ExpenseRecord(
@@ -92,6 +93,7 @@ class ExpenseRecord {
     travelPurpose: json['trip'] as String?,
     benefitName: json['benefit_name'] as String?,
     geosatReservationId: json['geosat_reservation_id'] as int?,
+    fundingIntent: json['funding_intent'] as String?,
   );
 
   final int id;
@@ -112,6 +114,7 @@ class ExpenseRecord {
   final String? travelPurpose;
   final String? benefitName;
   final int? geosatReservationId;
+  final String? fundingIntent;
 }
 
 class ExpenseFile {
@@ -271,6 +274,7 @@ class ExpenseUploadDraft {
     this.fiscalKind = 'unknown',
     this.benefitPeriod,
     this.pettyCashFundId,
+    this.fundingIntent,
   });
 
   final String idempotencyKey;
@@ -296,6 +300,7 @@ class ExpenseUploadDraft {
   final String fiscalKind;
   final String? benefitPeriod;
   final int? pettyCashFundId;
+  final String? fundingIntent;
 }
 
 class PettyCashFund {
@@ -358,7 +363,8 @@ class ExpenseUpdateDraft {
     required this.expenseDate,
     required this.amount,
     required this.rubric,
-    required this.periodId,
+    this.periodId,
+    this.fundingIntent = 'auto',
     this.merchantName,
     this.receiptReference,
     this.description,
@@ -373,7 +379,8 @@ class ExpenseUpdateDraft {
   final DateTime expenseDate;
   final double amount;
   final String rubric;
-  final int periodId;
+  final int? periodId;
+  final String fundingIntent;
   final String? merchantName;
   final String? receiptReference;
   final String? description;
