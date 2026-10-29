@@ -1,11 +1,33 @@
 import 'package:dio/dio.dart';
 
 import '../../../core/network/api_response.dart';
+import '../../../core/network/api_error.dart';
 import '../domain/expense_models.dart';
 
 class ExpensesApi {
   const ExpensesApi(this._dio);
   final Dio _dio;
+
+  Future<List<GeographicOption>> provinces() => _geography('provinces');
+  Future<List<GeographicOption>> localities(int provinceId) =>
+      _geography('localities', {'province_id': provinceId});
+  Future<List<GeographicOption>> _geography(
+    String path, [
+    Map<String, dynamic>? query,
+  ]) async {
+    final data = apiData(
+      await _dio.get<dynamic>(
+        'my-expenses/geography/$path',
+        queryParameters: query,
+      ),
+    );
+    return (data['items'] as List)
+        .map(
+          (row) =>
+              GeographicOption.fromJson(Map<String, dynamic>.from(row as Map)),
+        )
+        .toList();
+  }
 
   Future<ExpenseDashboard> dashboard() async => ExpenseDashboard.fromJson(
     apiData(await _dio.get<dynamic>('my-expenses/dashboard')),
@@ -169,12 +191,26 @@ class ExpensesApi {
   );
 
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft) async {
-    final file = draft.filePath != null
-        ? await MultipartFile.fromFile(
-            draft.filePath!,
-            filename: draft.fileName,
-          )
-        : MultipartFile.fromBytes(draft.fileBytes!, filename: draft.fileName);
+    // Camera/content URI and browser blob paths are not local filesystem paths.
+    // Use the bytes already read by the picker on every platform.
+    final MultipartFile file;
+    if (draft.fileBytes != null && draft.fileBytes!.isNotEmpty) {
+      file = MultipartFile.fromBytes(
+        draft.fileBytes!,
+        filename: draft.fileName,
+      );
+    } else if (draft.filePath != null && draft.filePath!.isNotEmpty) {
+      file = await MultipartFile.fromFile(
+        draft.filePath!,
+        filename: draft.fileName,
+      );
+    } else {
+      throw const ApiFailure(
+        statusCode: 0,
+        code: 'attachment_unreadable',
+        message: 'No se pudo leer la foto. Volvé a seleccionarla.',
+      );
+    }
     final response = await _dio.post<dynamic>(
       'my-expenses/records',
       data: FormData.fromMap({

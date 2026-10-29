@@ -457,6 +457,11 @@ class _FakeParkingGateway implements ParkingGateway {
 
 class _FakeExpensesGateway implements ExpensesGateway {
   @override
+  Future<List<GeographicOption>> provinces() async => const [];
+  @override
+  Future<List<GeographicOption>> localities(int provinceId) async => const [];
+
+  @override
   Future<List<PettyCashFund>> pettyCashFunds() async => const [];
 
   @override

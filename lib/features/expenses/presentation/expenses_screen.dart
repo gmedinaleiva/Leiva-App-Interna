@@ -1,3 +1,5 @@
+import 'geography_fields.dart';
+
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -1634,20 +1636,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             ),
             if (_rubric?.toLowerCase() == 'combustible') ...[
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _fuelProvince,
-                decoration: const InputDecoration(labelText: 'Provincia'),
-                validator: (value) => (value ?? '').trim().length < 2
-                    ? 'Ingresá la provincia'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _fuelCity,
-                decoration: const InputDecoration(labelText: 'Ciudad'),
-                validator: (value) => (value ?? '').trim().length < 2
-                    ? 'Ingresá la ciudad'
-                    : null,
+              GeographyFields(
+                gateway: widget.gateway,
+                province: _fuelProvince,
+                city: _fuelCity,
               ),
             ],
           ],
@@ -2201,14 +2193,10 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
             ),
             if (_rubric?.toLowerCase() == 'combustible') ...[
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _fuelProvince,
-                decoration: const InputDecoration(labelText: 'Provincia'),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _fuelCity,
-                decoration: const InputDecoration(labelText: 'Ciudad'),
+              GeographyFields(
+                gateway: widget.gateway,
+                province: _fuelProvince,
+                city: _fuelCity,
               ),
             ],
           ],

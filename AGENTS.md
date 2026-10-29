@@ -1,4 +1,11 @@
-﻿# Reglas de trabajo
+# Reglas de trabajo
+
+## Excepción autorizada 29/10/2026
+
+El usuario autorizó expresamente trabajar también en la copia Linux
+`/opt/stacks/capital-inversiones-stage/leiva-app-interna`, rama `DEV`.
+Esta copia se suma a la carpeta Windows autorizada; no habilita cambios en
+otras carpetas de código ni promociones a TEST/PROD.
 
 ## Carpeta autorizada
 

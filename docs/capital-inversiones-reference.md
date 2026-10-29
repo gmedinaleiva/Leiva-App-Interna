@@ -119,3 +119,13 @@ La revisión fue estática. No se ejecutó el portal ni se llamaron servicios de
 - [Autenticación](https://github.com/sistemas-leivahnos/WSL-Capital-Inversiones/blob/da5ccd7cb4de5b29692d24cd1f23887c1fb27cdd/app/routers/auth.py)
 - [Permisos](https://github.com/sistemas-leivahnos/WSL-Capital-Inversiones/blob/da5ccd7cb4de5b29692d24cd1f23887c1fb27cdd/app/dependencies.py)
 - [Middleware y routers](https://github.com/sistemas-leivahnos/WSL-Capital-Inversiones/blob/da5ccd7cb4de5b29692d24cd1f23887c1fb27cdd/app/main.py)
+
+## Actualización 29/10/2026 · viajes y comprobantes
+
+Referencia consultada tras fetch: `dcff2b68cad081d0f2a4dac719d423b0f2d094f9`
+en `origin/WSL-DEV` (backend funcional `f244b47`). Reservas expone
+`has_trajectory` independientemente de los eventos. Catálogos autenticados:
+`my-expenses/geography/provinces` y `my-expenses/geography/localities?province_id=…`,
+con `data.items[{id,name}]`. No hay conversión ni consulta externa del catálogo.
+
+El usuario autorizó expresamente esta copia Linux en DEV el 29/10/2026.

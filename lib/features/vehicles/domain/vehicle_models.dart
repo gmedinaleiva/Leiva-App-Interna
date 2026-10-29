@@ -68,11 +68,13 @@ class VehicleReservation {
     this.estimatedLuggageKg,
     this.fuel,
     this.returnParking,
+    this.hasTrajectory,
   });
 
   factory VehicleReservation.fromJson(Map<String, dynamic> json) =>
       VehicleReservation(
         id: json['id'] as int,
+        hasTrajectory: json['has_trajectory'] as bool?,
         status: json['status'] as String,
         startsAt: DateTime.parse(json['starts_at'] as String).toLocal(),
         endsAt: DateTime.parse(json['ends_at'] as String).toLocal(),
@@ -116,6 +118,12 @@ class VehicleReservation {
   final double? estimatedLuggageKg;
   final Map<String, dynamic>? fuel;
   final VehicleReturnParking? returnParking;
+  final bool? hasTrajectory;
+  String get trajectoryLabel => hasTrajectory == true
+      ? 'Trayectoria disponible'
+      : hasTrajectory == false
+      ? 'Sin trayectoria registrada'
+      : 'Consultar trayectoria';
 
   String? get nextAction => switch (status.toLowerCase()) {
     'aprobada' || 'approved' => 'start',

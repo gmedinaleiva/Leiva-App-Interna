@@ -2,6 +2,8 @@ import '../domain/expense_models.dart';
 import 'expenses_api.dart';
 
 abstract interface class ExpensesGateway {
+  Future<List<GeographicOption>> provinces();
+  Future<List<GeographicOption>> localities(int provinceId);
   Future<ExpenseDashboard> dashboard();
   Future<ExpenseRubrics> rubrics();
   Future<ExpenseRecord> upload(ExpenseUploadDraft draft);
@@ -28,6 +30,11 @@ abstract interface class ExpensesGateway {
 class ExpensesRepository implements ExpensesGateway {
   const ExpensesRepository(this._api);
   final ExpensesApi _api;
+  @override
+  Future<List<GeographicOption>> provinces() => _api.provinces();
+  @override
+  Future<List<GeographicOption>> localities(int provinceId) =>
+      _api.localities(provinceId);
 
   @override
   Future<ExpenseDashboard> dashboard() => _api.dashboard();

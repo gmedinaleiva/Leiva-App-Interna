@@ -403,3 +403,11 @@ List<Map<String, dynamic>> _maps(dynamic value) {
   if (value is! List) return const [];
   return value.cast<Map<String, dynamic>>();
 }
+
+class GeographicOption {
+  const GeographicOption({required this.id, required this.name});
+  factory GeographicOption.fromJson(Map<String, dynamic> json) =>
+      GeographicOption(id: json['id'] as int, name: json['name'] as String);
+  final int id;
+  final String name;
+}

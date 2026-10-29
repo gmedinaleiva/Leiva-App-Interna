@@ -323,7 +323,7 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     subtitle: Text(
-                      '${row.destination ?? row.purpose ?? 'Sin destino'}\n${_dt(row.startsAt)} — ${_time(row.endsAt)}',
+                      '${row.destination ?? row.purpose ?? 'Sin destino'}\n${_dt(row.startsAt)} — ${_time(row.endsAt)}\n${row.trajectoryLabel}',
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () {
@@ -451,6 +451,8 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
                       Icons.schedule_rounded,
                       '${_dt(row.startsAt)} — ${_time(row.endsAt)}',
                     ),
+                    const SizedBox(height: 7),
+                    _Line(Icons.route_outlined, row.trajectoryLabel),
                     if (row.nextAction != null || row.canCancel) ...[
                       const Divider(height: 26),
                       Wrap(
@@ -948,6 +950,15 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
               ],
             ),
           ),
+        if (trip.points.isEmpty) ...[
+          const SizedBox(height: 14),
+          const _TripPanel(
+            title: 'Recorrido',
+            child: Text(
+              'No hay posiciones GPS registradas para este viaje. Podés consultar los datos de la reserva igualmente.',
+            ),
+          ),
+        ],
         if (trip.points.isNotEmpty) ...[
           const SizedBox(height: 14),
           _TripPanel(
@@ -1004,6 +1015,15 @@ class _VehicleTripScreenState extends State<VehicleTripScreen>
                     ),
                   )
                   .toList(),
+            ),
+          ),
+        ],
+        if (trip.events.isEmpty) ...[
+          const SizedBox(height: 14),
+          const _TripPanel(
+            title: 'Eventos del viaje',
+            child: Text(
+              'Sin eventos registrados. Esto no impide consultar el recorrido disponible.',
             ),
           ),
         ],
