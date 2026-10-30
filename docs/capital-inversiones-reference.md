@@ -166,3 +166,13 @@ Validación local: 12 pruebas Flutter aprobadas (acciones del detalle,
 confirmación de envío, controles, fotos/reintegro, geografía y regresión de
 pantallas). Backend: dos pruebas de seguridad/transición/auditoría aprobadas;
 comprobación read-only de los gastos reales; portal saludable después del deploy.
+
+## Actualizacion 30/10/2026 - estado de rendicion enviado
+
+Referencia consultada mediante la respuesta documental del anfitrion,
+WSL-DEV `82593eb` (acciones de API `1d3721d`). La fuente del estado principal
+en el detalle es `period.status` y `period.status_label`; un
+`record.status=personal_expense_draft` puede persistir despues del envio.
+Tras `POST my-expenses/periods/{period_id}/submit` con HTTP 200, la app confirma
+el `status_label` de la respuesta, refresca el detalle y el dashboard, y no ofrece
+envio nuevamente cuando el periodo figura `submitted`.
