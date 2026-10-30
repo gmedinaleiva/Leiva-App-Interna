@@ -24,6 +24,7 @@ class Gateway implements ExpensesGateway {
       'funding_mode': 'reimbursement',
     },
     'actions': {'edit': true, 'cancel': true, 'submit_period': !blocked},
+    'fuel_evidence': blocked ? <String, dynamic>{'status': 'pending'} : null,
     'period_pending_controls': blocked
         ? [
             {
@@ -76,6 +77,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Esperar control fiscal.'), findsOneWidget);
     expect(find.text('Enviar rendición a Gerencia'), findsNothing);
+    expect(
+      find.text('Resolver control: Validar evidencia GeoSat'),
+      findsOneWidget,
+    );
     expect(find.text('Editar datos'), findsOneWidget);
   });
 }

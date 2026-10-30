@@ -954,6 +954,12 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
     }
   }
 
+  bool get _hasOwnPendingControl =>
+      _record?.periodPendingControls.any(
+        (item) => item['id'] == widget.documentId,
+      ) ??
+      false;
+
   Future<void> _statement() async {
     final controller = TextEditingController();
     final confirmed = await showDialog<bool>(
@@ -1242,6 +1248,25 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                                     },
                             ),
                           ),
+                          if (_hasOwnPendingControl &&
+                              _record!.fuelEvidence != null) ...[
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Todavía no podés enviar esta rendición: resolvé este control y la pantalla se actualizará para habilitar el envío.',
+                              style: TextStyle(
+                                color: Color(0xFFB54708),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton.icon(
+                              onPressed: _working ? null : _validateFuel,
+                              icon: const Icon(Icons.verified_outlined),
+                              label: const Text(
+                                'Resolver control: Validar evidencia GeoSat',
+                              ),
+                            ),
+                          ],
                           if (_record!.actions['submit_period'] == true)
                             FilledButton.icon(
                               onPressed: _working ? null : _sendPeriod,
@@ -1297,11 +1322,12 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                         label: const Text('Anular borrador'),
                       ),
                     if (_record!.fuelEvidence != null &&
-                        _record!.actions['edit'] == true) ...[
+                        _record!.actions['edit'] == true &&
+                        !_hasOwnPendingControl) ...[
                       OutlinedButton.icon(
                         onPressed: _working ? null : _validateFuel,
                         icon: const Icon(Icons.local_gas_station_outlined),
-                        label: const Text('Validar combustible'),
+                        label: const Text('Validar evidencia GeoSat'),
                       ),
                       OutlinedButton.icon(
                         onPressed: _working ? null : _statement,
