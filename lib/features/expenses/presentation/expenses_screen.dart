@@ -191,13 +191,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Future<void> _openRecord(ExpenseRecord record) async {
-    final changed = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) =>
             ExpenseRecordScreen(gateway: widget.gateway, documentId: record.id),
       ),
     );
-    if (changed == true) await _load();
+    if (mounted) await _load();
   }
 
   @override
@@ -303,8 +303,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               child: _PeriodCard(
                 period,
                 onSubmit:
-                    period.statusCode == 'open' ||
-                        period.statusCode == 'observed'
+                    period.documentCount > 0 &&
+                        (period.statusCode == 'open' ||
+                            period.statusCode == 'observed')
                     ? () => _submitPeriod(period)
                     : null,
                 onCorrection:
@@ -999,6 +1000,85 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
     }
   }
 
+  Future<void> _sendPeriod() async {
+    final period = _record?.period;
+    if (period == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enviar rendición a Gerencia'),
+        content: Text(
+          'Se enviará "${period.label}" con ${period.documentCount} comprobante(s), por ${_money(period.consumedAmount, period.currency)}. Revisá su composición antes de confirmar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Enviar rendición'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _working = true);
+    try {
+      await widget.gateway.submitPeriod(period.id);
+      await _load();
+    } catch (error) {
+      if (mounted) setState(() => _error = _expenseMessage(error));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _cancelDraft() async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Anular borrador'),
+        content: TextField(
+          controller: controller,
+          maxLength: 4000,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Motivo (mínimo 8 caracteres)',
+            helperText: 'Se conserva el historial. No se enviará este gasto.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (controller.text.trim().length >= 8) {
+                Navigator.pop(context, controller.text.trim());
+              }
+            },
+            child: const Text('Confirmar anulación'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null) return;
+    setState(() => _working = true);
+    try {
+      await widget.gateway.cancelRecord(widget.documentId, reason);
+      await _load();
+    } catch (error) {
+      if (mounted) setState(() => _error = _expenseMessage(error));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
   Future<void> _edit() async {
     if (_record == null) return;
     setState(() => _working = true);
@@ -1060,7 +1140,9 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text('${_record!.rubric ?? 'Sin rubro'} · ${_record!.status}'),
+                Text(
+                  '${_record!.rubric ?? 'Sin rubro'} · ${_record!.statusLabel ?? _record!.status}',
+                ),
                 if (_record!.reference?.isNotEmpty == true)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -1081,6 +1163,96 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                       style: const TextStyle(color: Color(0xFFB42318)),
                     ),
                   ),
+                if (_record!.period != null) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Rendición #${_record!.period!.id} · ${_record!.period!.label}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            '${_record!.period!.status} · ${_record!.period!.fundingMode == "reimbursement" ? "Reintegro personal" : "Adelanto / fondos asignados"}',
+                          ),
+                          Text(
+                            '${_record!.period!.documentCount} comprobante(s) · ${_money(_record!.period!.consumedAmount, _record!.period!.currency)}',
+                          ),
+                          const SizedBox(height: 8),
+                          if (_record!.period!.statusCode == 'open')
+                            const Text(
+                              'Cargar un comprobante no envía la rendición. Primero revisá los datos y controles; luego enviala a Gerencia.',
+                            ),
+                          if (_record!.periodRecords.isNotEmpty)
+                            ExpansionTile(
+                              title: const Text(
+                                'Ver comprobantes de esta rendición',
+                              ),
+                              children: _record!.periodRecords
+                                  .map(
+                                    (item) => ListTile(
+                                      title: Text('${item['title']}'),
+                                      subtitle: Text(
+                                        '${item['status_label']} · ${_money((item['amount'] as num?)?.toDouble(), item['currency'] as String? ?? 'ARS')}',
+                                      ),
+                                      onTap: item['id'] == widget.documentId
+                                          ? null
+                                          : () async {
+                                              await Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      ExpenseRecordScreen(
+                                                        gateway: widget.gateway,
+                                                        documentId:
+                                                            item['id'] as int,
+                                                      ),
+                                                ),
+                                              );
+                                              await _load();
+                                            },
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ..._record!.periodPendingControls.map(
+                            (item) => ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('${item["title"]}'),
+                              subtitle: Text(
+                                (item['reasons'] as List? ?? []).join('\n'),
+                              ),
+                              trailing: item['id'] == widget.documentId
+                                  ? null
+                                  : const Icon(Icons.chevron_right),
+                              onTap: item['id'] == widget.documentId
+                                  ? null
+                                  : () async {
+                                      await Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => ExpenseRecordScreen(
+                                            gateway: widget.gateway,
+                                            documentId: item['id'] as int,
+                                          ),
+                                        ),
+                                      );
+                                      await _load();
+                                    },
+                            ),
+                          ),
+                          if (_record!.actions['submit_period'] == true)
+                            FilledButton.icon(
+                              onPressed: _working ? null : _sendPeriod,
+                              icon: const Icon(Icons.send_outlined),
+                              label: const Text('Enviar rendición a Gerencia'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 if (_record!.hasFile)
                   OutlinedButton.icon(
@@ -1112,14 +1284,20 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (_record!.status == 'personal_expense_draft' ||
-                        _record!.status == 'personal_expense_observed')
+                    if (_record!.actions['edit'] == true)
                       OutlinedButton.icon(
                         onPressed: _working ? null : _edit,
                         icon: const Icon(Icons.edit_outlined),
                         label: const Text('Editar datos'),
                       ),
-                    if (_record!.fuelEvidence != null) ...[
+                    if (_record!.actions['cancel'] == true)
+                      OutlinedButton.icon(
+                        onPressed: _working ? null : _cancelDraft,
+                        icon: const Icon(Icons.cancel_outlined),
+                        label: const Text('Anular borrador'),
+                      ),
+                    if (_record!.fuelEvidence != null &&
+                        _record!.actions['edit'] == true) ...[
                       OutlinedButton.icon(
                         onPressed: _working ? null : _validateFuel,
                         icon: const Icon(Icons.local_gas_station_outlined),
@@ -2549,7 +2727,7 @@ class _RecordCard extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              record.status,
+              record.statusLabel ?? record.status,
               style: const TextStyle(
                 color: Color(0xFFEA580C),
                 fontWeight: FontWeight.w700,

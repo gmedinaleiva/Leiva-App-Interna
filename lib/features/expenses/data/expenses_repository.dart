@@ -14,6 +14,7 @@ abstract interface class ExpensesGateway {
     required int periodId,
     String recordType = 'all',
   });
+  Future<ExpenseRecord> cancelRecord(int documentId, String reason);
   Future<ExpenseRecord> resubmit(int documentId);
   Future<ExpenseRecord> validateFuel(int documentId);
   Future<ExpenseRecord> saveFuelStatement(int documentId, String statement);
@@ -59,6 +60,10 @@ class ExpensesRepository implements ExpensesGateway {
     required int periodId,
     String recordType = 'all',
   }) => _api.report(periodId: periodId, recordType: recordType);
+
+  @override
+  Future<ExpenseRecord> cancelRecord(int documentId, String reason) =>
+      _api.cancelRecord(documentId, reason);
 
   @override
   Future<ExpenseRecord> resubmit(int documentId) => _api.resubmit(documentId);

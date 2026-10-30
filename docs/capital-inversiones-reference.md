@@ -138,3 +138,31 @@ AGENTS 9f12e7c, para backend WSL-DEV e3d9d1: la capacidad
 explicit_personal_reimbursement habilita unding_intent=reimbursement.
 En ese caso la app no debe enviar personal_expense_period_id ni
 petty_cash_fund_id; el servidor resuelve el per�odo de reintegro propio.
+
+## 30/10/2026 · acciones de comprobantes pendientes
+
+Referencia consultada tras fetch: `d348afda2b590ad71051542aa20f540196b5c53e`.
+Contrato implementado y publicado en portal WSL-DEV: `1d3721d`.
+
+GET `my-expenses/records/{id}` devuelve `status_label`, `period`, `period_records`,
+`period_pending_controls` y `actions.edit/cancel/submit_period`. Usar capacidades
+para mostrar acciones; el servidor vuelve a validar permisos y estados.
+POST `my-expenses/records/{id}/cancel` recibe JSON `statement` (8–4000 caracteres),
+con CSRF habitual. Sólo borrador propio de período abierto; baja lógica auditada.
+Enviar usa POST `my-expenses/periods/{id}/submit`: afecta toda la rendición, con
+confirmación de cantidad/total. Controles y rendiciones vacías impiden envío.
+
+### Entrega para el agente Windows / compilación Android
+
+Actualizar DEV desde GitHub, compilar y distribuir la app por el circuito habitual.
+No promover TEST/PROD automáticamente. Los cambios del backend no cambian la APK
+ya instalada. No anular, mover ni enviar automáticamente los comprobantes reales
+#559/#567 durante pruebas. Validar en dispositivo: detalle → corregir modalidad,
+controles pendientes → resolver → enviar rendición; anular requiere motivo.
+El listado se refresca al regresar del detalle. Ticket GLPI #1287, tarea #261,
+proyecto #40: pendiente validación del usuario y distribución Android.
+
+Validación local: 12 pruebas Flutter aprobadas (acciones del detalle,
+confirmación de envío, controles, fotos/reintegro, geografía y regresión de
+pantallas). Backend: dos pruebas de seguridad/transición/auditoría aprobadas;
+comprobación read-only de los gastos reales; portal saludable después del deploy.

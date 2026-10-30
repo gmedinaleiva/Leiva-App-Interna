@@ -70,6 +70,11 @@ class ExpenseRecord {
     this.benefitName,
     this.geosatReservationId,
     this.fundingIntent,
+    this.statusLabel,
+    this.period,
+    this.actions = const {},
+    this.periodPendingControls = const [],
+    this.periodRecords = const [],
   });
 
   factory ExpenseRecord.fromJson(Map<String, dynamic> json) => ExpenseRecord(
@@ -94,6 +99,17 @@ class ExpenseRecord {
     benefitName: json['benefit_name'] as String?,
     geosatReservationId: json['geosat_reservation_id'] as int?,
     fundingIntent: json['funding_intent'] as String?,
+    periodRecords: (json['period_records'] as List? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList(),
+    statusLabel: json['status_label'] as String?,
+    period: json['period'] is Map<String, dynamic>
+        ? ExpensePeriod.fromJson(json['period'] as Map<String, dynamic>)
+        : null,
+    actions: Map<String, dynamic>.from(json['actions'] as Map? ?? {}),
+    periodPendingControls: (json['period_pending_controls'] as List? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList(),
   );
 
   final int id;
@@ -115,6 +131,11 @@ class ExpenseRecord {
   final String? benefitName;
   final int? geosatReservationId;
   final String? fundingIntent;
+  final String? statusLabel;
+  final ExpensePeriod? period;
+  final Map<String, dynamic> actions;
+  final List<Map<String, dynamic>> periodPendingControls;
+  final List<Map<String, dynamic>> periodRecords;
 }
 
 class ExpenseFile {

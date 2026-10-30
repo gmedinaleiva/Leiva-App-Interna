@@ -106,6 +106,17 @@ class ExpensesApi {
     ),
   );
 
+  Future<ExpenseRecord> cancelRecord(int documentId, String reason) async =>
+      ExpenseRecord.fromJson(
+        apiData(
+          await _dio.post<dynamic>(
+            'my-expenses/records/$documentId/cancel',
+            data: {'statement': reason},
+            options: Options(contentType: Headers.jsonContentType),
+          ),
+        ),
+      );
+
   Future<ExpensePeriod> submitPeriod(int periodId) async =>
       ExpensePeriod.fromJson(
         apiData(

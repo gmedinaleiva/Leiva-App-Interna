@@ -457,6 +457,9 @@ class _FakeParkingGateway implements ParkingGateway {
 
 class _FakeExpensesGateway implements ExpensesGateway {
   @override
+  Future<ExpenseRecord> cancelRecord(int documentId, String reason) =>
+      throw UnimplementedError();
+  @override
   Future<List<GeographicOption>> provinces() async => const [];
   @override
   Future<List<GeographicOption>> localities(int provinceId) async => const [];
