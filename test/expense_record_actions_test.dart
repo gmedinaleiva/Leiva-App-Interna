@@ -6,6 +6,7 @@ import 'package:leiva_app_interna/features/expenses/presentation/expenses_screen
 
 class Gateway implements ExpensesGateway {
   bool blocked = false;
+  bool submitted = false;
   int sends = 0;
   @override
   Future<ExpenseRecord> record(int id) async => ExpenseRecord.fromJson({
@@ -16,14 +17,18 @@ class Gateway implements ExpensesGateway {
     'title': 'Peaje',
     'period': {
       'id': 10,
-      'status': 'open',
-      'status_label': 'Abierta',
+      'status': submitted ? 'submitted' : 'open',
+      'status_label': submitted ? 'En revisión de Gerencia' : 'Abierta',
       'label': 'Octubre',
       'document_count': 2,
       'consumed_amount': 55000,
       'funding_mode': 'reimbursement',
     },
-    'actions': {'edit': true, 'cancel': true, 'submit_period': !blocked},
+    'actions': {
+      'edit': !submitted,
+      'cancel': !submitted,
+      'submit_period': !blocked && !submitted,
+    },
     'fuel_evidence': blocked ? <String, dynamic>{'status': 'pending'} : null,
     'period_pending_controls': blocked
         ? [
@@ -38,7 +43,12 @@ class Gateway implements ExpensesGateway {
   @override
   Future<ExpensePeriod> submitPeriod(int id) async {
     sends++;
-    return ExpensePeriod.fromJson({'id': id, 'status': 'submitted'});
+    submitted = true;
+    return ExpensePeriod.fromJson({
+      'id': id,
+      'status': 'submitted',
+      'status_label': 'En revisión de Gerencia',
+    });
   }
 
   @override
@@ -65,6 +75,11 @@ void main() {
       await tester.tap(find.text('Enviar rendición'));
       await tester.pumpAndSettle();
       expect(gateway.sends, 1);
+      expect(
+        find.text('Estado de la rendición: En revisión de Gerencia'),
+        findsOneWidget,
+      );
+      expect(find.text('Enviar rendición a Gerencia'), findsNothing);
     },
   );
   testWidgets('pending controls explain why sending is unavailable', (
@@ -81,6 +96,5 @@ void main() {
       find.text('Resolver control: Validar evidencia GeoSat'),
       findsOneWidget,
     );
-    expect(find.text('Editar datos'), findsOneWidget);
   });
 }

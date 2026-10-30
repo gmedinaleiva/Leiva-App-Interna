@@ -1031,8 +1031,17 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
     if (confirmed != true) return;
     setState(() => _working = true);
     try {
-      await widget.gateway.submitPeriod(period.id);
+      final submittedPeriod = await widget.gateway.submitPeriod(period.id);
+      if (!mounted) return;
       await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Rendición enviada: ${submittedPeriod.status}. Ya está disponible para Gerencia.',
+          ),
+        ),
+      );
     } catch (error) {
       if (mounted) setState(() => _error = _expenseMessage(error));
     } finally {
@@ -1147,7 +1156,7 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '${_record!.rubric ?? 'Sin rubro'} · ${_record!.statusLabel ?? _record!.status}',
+                  'Comprobante: ${_record!.rubric ?? 'Sin rubro'} · ${_record!.statusLabel ?? _record!.status}',
                 ),
                 if (_record!.reference?.isNotEmpty == true)
                   Padding(
@@ -1182,7 +1191,13 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            '${_record!.period!.status} · ${_record!.period!.fundingMode == "reimbursement" ? "Reintegro personal" : "Adelanto / fondos asignados"}',
+                            'Estado de la rendición: ${_record!.period!.status}',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            _record!.period!.fundingMode == 'reimbursement'
+                                ? 'Reintegro personal'
+                                : 'Adelanto / fondos asignados',
                           ),
                           Text(
                             '${_record!.period!.documentCount} comprobante(s) · ${_money(_record!.period!.consumedAmount, _record!.period!.currency)}',
@@ -1191,6 +1206,11 @@ class _ExpenseRecordScreenState extends State<ExpenseRecordScreen> {
                           if (_record!.period!.statusCode == 'open')
                             const Text(
                               'Cargar un comprobante no envía la rendición. Primero revisá los datos y controles; luego enviala a Gerencia.',
+                            )
+                          else if (_record!.period!.statusCode == 'submitted')
+                            const Text(
+                              'La rendición ya fue enviada y está disponible para revisión de Gerencia.',
+                              style: TextStyle(color: Color(0xFF027A48)),
                             ),
                           if (_record!.periodRecords.isNotEmpty)
                             ExpansionTile(
