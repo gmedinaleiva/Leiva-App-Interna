@@ -12,6 +12,7 @@ import '../../parking/data/parking_repository.dart';
 import '../../parking/domain/parking_models.dart';
 import '../data/vehicles_repository.dart';
 import '../domain/vehicle_models.dart';
+import 'vehicle_visits_screen.dart';
 
 class VehiclesScreen extends StatefulWidget {
   const VehiclesScreen({
@@ -238,6 +239,17 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
           onAgendaHistory: () =>
               _showAgenda('Historial de agenda', _agendaHistory),
         ),
+        const SizedBox(height: 12),
+        if (_reservations.any((row) => row.hasVisitAgenda))
+          OutlinedButton.icon(
+            onPressed: () => _showVisitReservations(
+              _reservations.where((row) => row.hasVisitAgenda).toList(),
+            ),
+            icon: const Icon(Icons.event_note_outlined),
+            label: Text(
+              'Mi agenda de visitas (${_reservations.where((row) => row.hasVisitAgenda).length})',
+            ),
+          ),
         const SizedBox(height: 16),
         if (_reservations.isEmpty) const _SmallMobilityEmpty(),
         ..._section('En curso', active),
@@ -341,6 +353,42 @@ class _VehiclesScreenState extends State<VehiclesScreen> {
                   ),
                 )
                 .toList(),
+    ),
+  );
+
+  Future<void> _showVisitReservations(
+    List<VehicleReservation> rows,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) => _MobilitySheet(
+      title: 'Mi agenda de visitas',
+      children: rows
+          .map(
+            (row) => ListTile(
+              leading: const Icon(Icons.location_on_outlined),
+              title: Text(
+                row.destination ?? row.purpose ?? 'Visitas asignadas',
+              ),
+              subtitle: Text(
+                '${row.vehicle?.label ?? 'Vehiculo'} ? ${_dt(row.startsAt)}',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(this.context).push(
+                  MaterialPageRoute(
+                    builder: (_) => VehicleVisitsScreen(
+                      gateway: widget.gateway,
+                      reservation: row,
+                    ),
+                  ),
+                );
+              },
+            ),
+          )
+          .toList(),
     ),
   );
 

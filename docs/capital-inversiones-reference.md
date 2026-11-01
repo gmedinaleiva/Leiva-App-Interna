@@ -176,3 +176,10 @@ en el detalle es `period.status` y `period.status_label`; un
 Tras `POST my-expenses/periods/{period_id}/submit` con HTTP 200, la app confirma
 el `status_label` de la respuesta, refresca el detalle y el dashboard, y no ofrece
 envio nuevamente cuando el periodo figura `submitted`.
+
+## Actualizacion 01/11/2026 - agenda personal de visitas V2
+
+Referencia consultada: WSL-DEV `39c0b3645d0bee7180a736d77bdde0e9dadacf3d`.
+La app consume solo GET `vehicle-reservations/{id}/visits` y POST
+`vehicle-reservations/{id}/visits/{stop_id}/result`; no planifica ni aprueba visitas.
+Los resultados son comerciales, requieren notas y permanecen separados de GPS.

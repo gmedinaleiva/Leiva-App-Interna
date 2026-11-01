@@ -150,6 +150,29 @@ class VehiclesApi {
     return _items(data).map(VehicleAgendaItem.fromJson).toList();
   }
 
+  Future<VehicleVisitAgenda> visits(int reservationId) async {
+    final data = apiData(
+      await _dio.get<dynamic>('vehicle-reservations/$reservationId/visits'),
+    );
+    return VehicleVisitAgenda.fromJson(data);
+  }
+
+  Future<VehicleVisitStop> saveVisitResult(
+    int reservationId,
+    int stopId, {
+    required String result,
+    required String notes,
+  }) async {
+    final data = apiData(
+      await _dio.post<dynamic>(
+        'vehicle-reservations/$reservationId/visits/$stopId/result',
+        data: {'result': result, 'notes': notes},
+        options: Options(contentType: Headers.jsonContentType),
+      ),
+    );
+    return VehicleVisitStop.fromJson(data);
+  }
+
   List<Map<String, dynamic>> _items(Map<String, dynamic> data) {
     final items = data['items'];
     if (items is! List) {

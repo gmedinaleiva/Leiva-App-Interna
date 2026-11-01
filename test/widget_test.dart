@@ -377,6 +377,18 @@ class _FakeRoomsGateway implements RoomsGateway {
 
 class _FakeVehiclesGateway implements VehiclesGateway {
   @override
+  Future<VehicleVisitAgenda> visits(int reservationId) async =>
+      const VehicleVisitAgenda(reservationId: 1, stops: []);
+
+  @override
+  Future<VehicleVisitStop> saveVisitResult(
+    int reservationId,
+    int stopId, {
+    required String result,
+    required String notes,
+  }) => throw UnimplementedError();
+
+  @override
   Future<List<VehicleAgendaItem>> activeAgenda() async => const [];
 
   @override

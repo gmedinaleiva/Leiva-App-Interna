@@ -69,12 +69,14 @@ class VehicleReservation {
     this.fuel,
     this.returnParking,
     this.hasTrajectory,
+    this.hasVisitAgenda = false,
   });
 
   factory VehicleReservation.fromJson(Map<String, dynamic> json) =>
       VehicleReservation(
         id: json['id'] as int,
         hasTrajectory: json['has_trajectory'] as bool?,
+        hasVisitAgenda: json['has_visit_agenda'] as bool? ?? false,
         status: json['status'] as String,
         startsAt: DateTime.parse(json['starts_at'] as String).toLocal(),
         endsAt: DateTime.parse(json['ends_at'] as String).toLocal(),
@@ -119,6 +121,7 @@ class VehicleReservation {
   final Map<String, dynamic>? fuel;
   final VehicleReturnParking? returnParking;
   final bool? hasTrajectory;
+  final bool hasVisitAgenda;
   String get trajectoryLabel => hasTrajectory == true
       ? 'Trayectoria disponible'
       : hasTrajectory == false
@@ -440,4 +443,87 @@ class VehicleAgendaItem {
 List<Map<String, dynamic>> _vehicleMaps(dynamic value) {
   if (value is! List) return const [];
   return value.cast<Map<String, dynamic>>();
+}
+
+class VehicleVisitAgenda {
+  const VehicleVisitAgenda({required this.reservationId, required this.stops});
+
+  factory VehicleVisitAgenda.fromJson(Map<String, dynamic> json) =>
+      VehicleVisitAgenda(
+        reservationId: json['reservation_id'] as int,
+        stops:
+            _vehicleMaps(json['stops']).map(VehicleVisitStop.fromJson).toList()
+              ..sort((a, b) {
+                final byOrder = a.order.compareTo(b.order);
+                return byOrder == 0 ? a.id.compareTo(b.id) : byOrder;
+              }),
+      );
+
+  final int reservationId;
+  final List<VehicleVisitStop> stops;
+}
+
+class VehicleVisitStop {
+  const VehicleVisitStop({
+    required this.id,
+    required this.order,
+    required this.name,
+    required this.identity,
+    required this.result,
+    this.address,
+    this.latitude,
+    this.longitude,
+    this.radius,
+    this.from,
+    this.to,
+    this.gpsStatus,
+    this.gpsLabel,
+    this.resultLabel,
+    this.resultNotes,
+    this.resultAt,
+    this.notes,
+  });
+
+  factory VehicleVisitStop.fromJson(Map<String, dynamic> json) =>
+      VehicleVisitStop(
+        id: json['id'] as int,
+        order: json['order'] as int,
+        name: json['name'] as String,
+        address: json['address'] as String?,
+        latitude: (json['latitude'] as num?)?.toDouble(),
+        longitude: (json['longitude'] as num?)?.toDouble(),
+        radius: (json['radius'] as num?)?.toDouble(),
+        from: DateTime.tryParse(json['from'] as String? ?? '')?.toLocal(),
+        to: DateTime.tryParse(json['to'] as String? ?? '')?.toLocal(),
+        gpsStatus: json['gps_status'] as String?,
+        gpsLabel: json['gps_label'] as String?,
+        identity: Map<String, dynamic>.unmodifiable(
+          json['identity'] as Map? ?? const {},
+        ),
+        result: json['result'] as String? ?? 'pending',
+        resultLabel: json['result_label'] as String?,
+        resultNotes: json['result_notes'] as String?,
+        resultAt: DateTime.tryParse(json['result_at'] as String? ?? '')
+            ?.toLocal(),
+        notes: json['notes'] as String?,
+      );
+
+  final int id;
+  final int order;
+  final String name;
+  final String? address;
+  final double? latitude;
+  final double? longitude;
+  final double? radius;
+  final DateTime? from;
+  final DateTime? to;
+  final String? gpsStatus;
+  final String? gpsLabel;
+  final Map<String, dynamic> identity;
+  final String result;
+  final String? resultLabel;
+  final String? resultNotes;
+  final DateTime? resultAt;
+  final String? notes;
+  bool get hasMap => latitude != null && longitude != null;
 }

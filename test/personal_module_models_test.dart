@@ -127,6 +127,37 @@ void main() {
     expect(item.notes, 'Visita programada');
   });
 
+  test('parses a personal visit stop without financial identity', () {
+    final agenda = VehicleVisitAgenda.fromJson({
+      'reservation_id': 8,
+      'stops': [
+        {
+          'id': 14,
+          'order': 1,
+          'name': 'Cliente ejemplo',
+          'address': 'Calle 123',
+          'latitude': -31.63,
+          'longitude': -60.7,
+          'radius': 100,
+          'from': '2026-11-02T12:00:00Z',
+          'to': '2026-11-02T13:00:00Z',
+          'gps_status': 'planificado',
+          'gps_label': 'Sin evaluar',
+          'identity': {'contact': 'Ana', 'phone': '123'},
+          'result': 'pending',
+          'result_label': 'Pendiente',
+          'result_notes': null,
+          'result_at': null,
+          'notes': 'Presentarse en recepcion',
+        },
+      ],
+    });
+    expect(agenda.reservationId, 8);
+    expect(agenda.stops.single.hasMap, isTrue);
+    expect(agenda.stops.single.identity['contact'], 'Ana');
+    expect(agenda.stops.single.result, 'pending');
+  });
+
   test('parses an authorized petty cash fund and open settlement', () {
     final fund = PettyCashFund.fromJson({
       'id': 5,
